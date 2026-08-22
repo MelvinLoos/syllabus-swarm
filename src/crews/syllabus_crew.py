@@ -17,6 +17,7 @@ output as grounding context for designing relevant, scaffolded exercises.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -188,7 +189,11 @@ def run_syllabus_crew(
             verbose=verbose,
         )
         architect_result = architect_crew.kickoff()
-        syllabus_raw = str(architect_result).strip()
+        syllabus_raw = (
+            architect_result.raw
+            if hasattr(architect_result, "raw")
+            else str(architect_result)
+        ).strip()
 
         if not syllabus_raw:
             raise RuntimeError(
@@ -243,7 +248,11 @@ def run_syllabus_crew(
                     verbose=verbose,
                 )
                 lab_result = lab_crew.kickoff()
-                lab_raw = str(lab_result).strip()
+                lab_raw = (
+                    lab_result.raw
+                    if hasattr(lab_result, "raw")
+                    else str(lab_result)
+                ).strip()
 
                 if not lab_raw:
                     labs_error = "Lab Developer produced no output."
@@ -275,8 +284,10 @@ def run_syllabus_crew(
             syllabus_path=syllabus_path,
             labs_base_path=labs_base_path,
         )
-    except Exception:
-        manifest_path = None  # manifest failure is non-fatal
+    except Exception as exc:
+        if verbose:
+            print(f"  [Warning] Manifest generation failed: {exc}", file=sys.stderr)
+        manifest_path = None
 
     # ── 4. Return combined result ──────────────────────────────────────
     return CrewResult(
