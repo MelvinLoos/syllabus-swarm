@@ -1,0 +1,26 @@
+# ============================================================
+# syllabus-swarm — Pinned Python Dependencies
+# ============================================================
+# Issue #1: Project Environment & OpenRouter Integration
+# Multi-agent system using CrewAI with DeepSeek R1 via OpenRouter.
+#
+# All versions pinned to latest stable as of 2026-08-22
+# to ensure reproducible builds across environments.
+#
+# Install:  pip install -r requirements.txt
+# Upgrade:  pip install --upgrade -r requirements.txt
+
+# --- AI Agent Framework ---
+crewai==1.15.17
+
+# --- LLM Chains & Orchestration ---
+langchain==1.3.16
+
+# --- OpenAI-Compatible Provider Bridge (used for OpenRouter) ---
+langchain-openai==1.6.0
+
+# --- OpenAI Python SDK (core dependency for langchain-openai) ---
+openai==3.3.1
+
+# --- Environment Variable Management (.env loader) ---
+python-dotenv==1.2.3
