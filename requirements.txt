@@ -22,5 +22,11 @@ langchain-openai==1.6.0
 # --- OpenAI Python SDK (core dependency for langchain-openai) ---
 openai==2.54.0
 
+# --- Multi-Provider LLM Gateway (fallback for non-native CrewAI providers) ---
+# Required for qwen/qwen3-coder and other providers not natively supported
+# by crewai.LLM (OpenRouter routes, but crewai needs litellm to parse the
+# provider prefix).  See https://docs.crewai.com/en/learn/llm-connections
+litellm==1.97.0
+
 # --- Environment Variable Management (.env loader) ---
 python-dotenv==1.2.3
