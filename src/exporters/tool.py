@@ -1,0 +1,625 @@
+"""
+tool.py — CrewAI Tool Wrapper for the Output Exporter System
+=============================================================
+
+Issue #4: Automated Output Exporter & Markdown Packager
+
+Wraps the :mod:`src.exporters.file_writer` and :mod:`src.exporters.manifest`
+functionality into a single **CrewAI Tool** that agents can invoke during
+crew execution, plus a **standalone CLI** for direct use by operators.
+
+CrewAI Integration
+------------------
+Agents use this tool by calling :meth:`OutputExportTool._run` with a
+``command`` string and keyword arguments::
+
+    tool = OutputExportTool(force=True)
+    tool._run(command="write-syllabus",
+              course_name="Data Science", content="# Syllabus ...")
+
+CLI Usage
+---------
+.. code-block:: bash
+
+    # Write a syllabus directly:
+    python -m src.exporters.tool write-syllabus \\
+        --course "Data Science with Python" \\
+        --content-file ./syllabus.md
+
+    # Write a batch of lab files:
+    python -m src.exporters.tool write-labs \\
+        --course "Data Science with Python" \\
+        --tier tier1_foundations \\
+        --dir ./labs_output
+
+    # Generate / refresh the output manifest:
+    python -m src.exporters.tool generate-manifest \\
+        --course "Data Science with Python"
+
+    # With force overwrite:
+    python -m src.exporters.tool write-syllabus \\
+        --course "Data Science" --content "..." --force
+
+Public API
+----------
+* ``OutputExportTool`` — the CrewAI ``BaseTool`` subclass.
+* ``build_cli_parser()`` — builds the ``argparse`` argument parser.
+* ``main()`` — CLI entry point (also ``if __name__ == "__main__"``).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
+from crewai.tools import BaseTool
+
+from src.exporters.file_writer import (
+    OUTPUT_PATHS,
+    FileWriteError,
+    OutputPathConfig,
+    write_directory_tree,
+    write_file,
+    write_lab_file,
+    write_syllabus,
+)
+from src.exporters.manifest import (
+    ArtifactSummary,
+    ManifestData,
+    update_output_manifest,
+)
+
+# ---------------------------------------------------------------------------
+# Project-root resolution (mirrors file_writer.py)
+# ---------------------------------------------------------------------------
+
+_PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
+
+
+# ---------------------------------------------------------------------------
+# Tool result helpers
+# ---------------------------------------------------------------------------
+
+
+def _ok(message: str, path: Optional[Union[str, Path]] = None) -> str:
+    """Format a successful tool result string."""
+    if path:
+        return json.dumps({"status": "ok", "message": message, "path": str(path)})
+    return json.dumps({"status": "ok", "message": message})
+
+
+def _err(message: str) -> str:
+    """Format an error tool result string."""
+    return json.dumps({"status": "error", "message": message})
+
+
+# ---------------------------------------------------------------------------
+# CrewAI Tool — OutputExportTool
+# ---------------------------------------------------------------------------
+
+
+class OutputExportTool(BaseTool):
+    """CrewAI Tool that wraps syllabus-swarm file-writer and manifest operations.
+
+    Agents use this tool to persist generated syllabi, tiered labs, and
+    rubrics to disk, and to refresh the ``output/README.md`` manifest.
+
+    The tool accepts a ``command`` argument to select the operation,
+    plus keyword parameters specific to each command.
+
+    Commands
+    --------
+    ``write-syllabus``
+        Write a single syllabus Markdown file.
+        Required kwargs: ``course_name``, ``content``.
+
+    ``write-labs``
+        Write a batch of lab files from a directory-tree mapping.
+        Required kwargs: ``course_name``, ``tier``, ``files``.
+
+    ``generate-manifest``
+        Scan ``output/`` and regenerate ``output/README.md``.
+        Optional kwargs: ``course_name``.
+
+    ``write-file``
+        Low-level: write arbitrary content to a single file.
+        Required kwargs: ``path``, ``content``.
+
+    ``write-directory-tree``
+        Low-level: write a batch of files from a ``{rel_path: content}`` dict.
+        Required kwargs: ``base_path``, ``files``.
+
+    Parameters
+    ----------
+    force : bool
+        When ``True``, existing files are silently overwritten.  When
+        ``False`` (the default), a ``FileWriteError`` is raised for
+        pre-existing files.
+    """
+
+    name: str = "output_export_tool"
+    description: str = (
+        "Writes syllabus, labs, and manifest files to the output/ directory "
+        "tree.  Supports commands: write-syllabus, write-labs, "
+        "generate-manifest, write-file, write-directory-tree.  "
+        "Accepts a JSON object with a 'command' key and command-specific "
+        "parameters.  Example: "
+        '{"command": "write-syllabus", "course_name": "ML 101", '
+        '"content": "# Syllabus\\n..."}'
+    )
+
+    force: bool = False
+
+    # ------------------------------------------------------------------
+    # CrewAI entry point
+    # ------------------------------------------------------------------
+
+    def _run(self, **kwargs: Any) -> str:
+        """Execute the tool command selected by *kwargs*.
+
+        The first positional/keyword argument is interpreted as the command
+        name.  All other keyword arguments are forwarded to the matching
+        internal handler.
+
+        Returns
+        -------
+        str
+            JSON-encoded result: ``{"status": "ok", ...}`` or
+            ``{"status": "error", "message": "..."}``.
+        """
+        # ── Normalise: accept a plain string or JSON-encoded dict ──────
+        parsed: Dict[str, Any]
+        if "command" not in kwargs:
+            # CrewAI agents may pass a single JSON string as the first arg.
+            raw = kwargs.get("input", kwargs.get("request_id", ""))
+            if isinstance(raw, str):
+                try:
+                    parsed = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    return _err(
+                        f"Unrecognised input format.  Expected a JSON object "
+                        f"with a 'command' key.  Got: {raw!r}"
+                    )
+                if not isinstance(parsed, dict) or "command" not in parsed:
+                    return _err(
+                        "Missing 'command' key.  Supported commands: "
+                        "write-syllabus, write-labs, generate-manifest, "
+                        "write-file, write-directory-tree."
+                    )
+            else:
+                return _err(
+                    "No 'command' provided.  Supported commands: "
+                    "write-syllabus, write-labs, generate-manifest, "
+                    "write-file, write-directory-tree."
+                )
+        else:
+            parsed = dict(kwargs)
+
+        command = str(parsed.get("command", "")).strip()
+
+        # ── Dispatch ─────────────────────────────────────────────────
+        try:
+            if command == "write-syllabus":
+                return self._handle_write_syllabus(parsed)
+            elif command == "write-labs":
+                return self._handle_write_labs(parsed)
+            elif command == "generate-manifest":
+                return self._handle_generate_manifest(parsed)
+            elif command == "write-file":
+                return self._handle_write_file(parsed)
+            elif command == "write-directory-tree":
+                return self._handle_write_directory_tree(parsed)
+            else:
+                return _err(
+                    f"Unknown command: '{command}'.  Supported commands: "
+                    "write-syllabus, write-labs, generate-manifest, "
+                    "write-file, write-directory-tree."
+                )
+        except FileWriteError as exc:
+            return _err(str(exc))
+        except ValueError as exc:
+            return _err(str(exc))
+        except Exception as exc:
+            return _err(f"Unexpected error: {exc}")
+
+    # ------------------------------------------------------------------
+    # Command handlers
+    # ------------------------------------------------------------------
+
+    def _handle_write_syllabus(self, params: Dict[str, Any]) -> str:
+        """Write a syllabus Markdown file."""
+        course_name = str(params.get("course_name", ""))
+        if not course_name:
+            return _err("Missing required parameter: 'course_name'.")
+
+        content = params.get("content", "")
+        if not content:
+            return _err("Missing required parameter: 'content'.")
+
+        path = write_syllabus(course_name, content, force=self.force)
+        return _ok(f"Syllabus written for '{course_name}'.", path)
+
+    def _handle_write_labs(self, params: Dict[str, Any]) -> str:
+        """Write a batch of lab files from a files-dict mapping."""
+        course_name = str(params.get("course_name", ""))
+        if not course_name:
+            return _err("Missing required parameter: 'course_name'.")
+
+        tier = str(params.get("tier", "tier1_foundations"))
+        files_raw = params.get("files")
+        if not files_raw or not isinstance(files_raw, dict):
+            return _err(
+                "Missing or invalid 'files' parameter.  "
+                "Expected a dict of {relative_path: content}."
+            )
+
+        files_dict: Dict[str, Any] = files_raw
+        base = OUTPUT_PATHS.labs_dir / tier
+        written = write_directory_tree(base, files_dict, force=self.force)
+        return _ok(
+            f"Wrote {len(written)} lab file(s) for '{course_name}' "
+            f"under tier '{tier}'.",
+            str(base),
+        )
+
+    def _handle_generate_manifest(
+        self, params: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Scan output/ and regenerate output/README.md."""
+        if params is None:
+            params = {}
+        course_name = str(params.get("course_name", ""))
+        path = update_output_manifest(course_name=course_name)
+        return _ok("Manifest regenerated.", path)
+
+    def _handle_write_file(self, params: Dict[str, Any]) -> str:
+        """Low-level: write arbitrary content to a single file."""
+        file_path = str(params.get("path", ""))
+        if not file_path:
+            return _err("Missing required parameter: 'path'.")
+
+        content = params.get("content", "")
+        if not content:
+            return _err("Missing required parameter: 'content'.")
+
+        path = write_file(file_path, content, force=self.force)
+        return _ok("File written.", path)
+
+    def _handle_write_directory_tree(self, params: Dict[str, Any]) -> str:
+        """Low-level: write a batch of files from a directory-tree mapping."""
+        base_path = str(params.get("base_path", ""))
+        if not base_path:
+            return _err("Missing required parameter: 'base_path'.")
+
+        files_raw = params.get("files")
+        if not files_raw or not isinstance(files_raw, dict):
+            return _err(
+                "Missing or invalid 'files' parameter.  "
+                "Expected a dict of {relative_path: content}."
+            )
+
+        files_dict: Dict[str, Any] = files_raw
+        written = write_directory_tree(
+            base_path, files_dict, force=self.force
+        )
+        return _ok(
+            f"Wrote {len(written)} file(s) to '{base_path}'.",
+            str(written[0]) if written else base_path,
+        )
+
+
+# ---------------------------------------------------------------------------
+# CLI — Argument Parser
+# ---------------------------------------------------------------------------
+
+
+def build_cli_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for the ``output_export_tool`` CLI.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        A fully-configured parser with subcommands for all operations.
+    """
+    parser = argparse.ArgumentParser(
+        prog="output-export-tool",
+        description=(
+            "CrewAI Output Export Tool — write syllabi, labs, and "
+            "manifests to the output/ directory from the command line."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  %(prog)s write-syllabus --course \"ML 101\" "
+            '--content "# Syllabus"\n'
+            "  %(prog)s write-syllabus --course \"ML 101\" "
+            "--content-file ./syllabus.md\n"
+            "  %(prog)s write-labs --course \"ML 101\" "
+            '--tier tier1_foundations --files \'{"lab1.py": "..."}\'\n'
+            "  %(prog)s generate-manifest --course \"ML 101\"\n"
+            "  %(prog)s write-file --path output/test.md "
+            "--content \"# Hello\"\n"
+            "  %(prog)s write-directory-tree --base-path output/labs "
+            '--files \'{"a.py": "# a"}\'\n'
+        ),
+    )
+
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Overwrite existing files without raising an error.",
+    )
+
+    sub = parser.add_subparsers(
+        dest="command", required=True, help="Operation to perform."
+    )
+
+    # ── write-syllabus ──────────────────────────────────────────────
+    ws = sub.add_parser(
+        "write-syllabus",
+        help="Write a syllabus .md file to output/syllabus/<course>.md.",
+        description=(
+            "Write a Humanics-aligned syllabus as a Markdown file under "
+            "``output/syllabus/``.  The course name is sanitised into a "
+            "safe filename automatically."
+        ),
+    )
+    ws.add_argument(
+        "--course", "-c",
+        required=True,
+        dest="course_name",
+        help="Human-readable course title (e.g. 'Data Science with Python').",
+    )
+    ws.add_argument(
+        "--content",
+        default="",
+        help="Syllabus content as a raw string.",
+    )
+    ws.add_argument(
+        "--content-file",
+        default=None,
+        dest="content_file",
+        help="Path to a file containing the syllabus content.",
+    )
+
+    # ── write-labs ──────────────────────────────────────────────────
+    wl = sub.add_parser(
+        "write-labs",
+        help="Write a batch of lab files into output/labs/<course>/.",
+        description=(
+            "Populate a tiered lab directory under "
+            "``output/labs/<course>/``.  "
+            "Files are specified as a JSON mapping from relative paths "
+            "to their content."
+        ),
+    )
+    wl.add_argument(
+        "--course", "-c",
+        required=True,
+        dest="course_name",
+        help="Human-readable course title.",
+    )
+    wl.add_argument(
+        "--tier", "-t",
+        default="tier1_foundations",
+        help="Tier directory name (default: 'tier1_foundations').",
+    )
+    wl.add_argument(
+        "--files",
+        default="{}",
+        help=(
+            "JSON object mapping relative file paths to their content.  "
+            "Example: '{\"starter/lab1.py\": \"# TODO\"}'"
+        ),
+    )
+    wl.add_argument(
+        "--files-dir",
+        default=None,
+        dest="files_dir",
+        help=(
+            "Directory containing lab files to write.  The directory "
+            "tree is mirrored under the target path."
+        ),
+    )
+
+    # ── generate-manifest ───────────────────────────────────────────
+    gm = sub.add_parser(
+        "generate-manifest",
+        help="Scan output/ and regenerate output/README.md.",
+        description=(
+            "Walk the entire ``output/`` directory, collect statistics "
+            "for every artifact, and rewrite ``output/README.md`` with "
+            "a summary table and directory tree."
+        ),
+    )
+    gm.add_argument(
+        "--course", "-c",
+        default="",
+        dest="course_name",
+        help="Optional course name included in the manifest header.",
+    )
+
+    # ── write-file (low-level) ──────────────────────────────────────
+    wf = sub.add_parser(
+        "write-file",
+        help="Low-level: write arbitrary content to a single file.",
+        description="Write a single file anywhere under the project root.",
+    )
+    wf.add_argument(
+        "--path",
+        required=True,
+        help="Destination path (relative to project root, or absolute).",
+    )
+    wf.add_argument(
+        "--content",
+        default="",
+        help="Text content to write.",
+    )
+    wf.add_argument(
+        "--content-file",
+        default=None,
+        dest="content_file",
+        help="Path to a file whose contents will be written.",
+    )
+
+    # ── write-directory-tree (low-level) ────────────────────────────
+    wdt = sub.add_parser(
+        "write-directory-tree",
+        help="Low-level: write a batch of files from a path→content map.",
+        description=(
+            "Write multiple files under a base directory.  Each entry is "
+            "a relative path and its content."
+        ),
+    )
+    wdt.add_argument(
+        "--base-path",
+        required=True,
+        dest="base_path",
+        help="Root directory under which all files will be written.",
+    )
+    wdt.add_argument(
+        "--files",
+        default="{}",
+        help=(
+            "JSON object mapping relative file paths to their content.  "
+            'Example: \'{"a/b.txt": "hello", "a/c.py": "# code"}\''
+        ),
+    )
+
+    return parser
+
+
+# ---------------------------------------------------------------------------
+# CLI helpers
+# ---------------------------------------------------------------------------
+
+
+def _read_content(content: str, content_file: Optional[str]) -> str:
+    """Resolve content: use *content* if non-empty, else read *content_file*."""
+    if content.strip():
+        return content
+    if content_file:
+        p = Path(content_file)
+        if not p.is_absolute():
+            p = _PROJECT_ROOT / p
+        return p.read_text(encoding="utf-8")
+    return ""
+
+
+def _collect_files_from_dir(dir_path: str) -> Dict[str, str]:
+    """Walk *dir_path* and return ``{relative_path: content}`` mapping."""
+    base = Path(dir_path)
+    if not base.is_absolute():
+        base = _PROJECT_ROOT / base
+    result: Dict[str, str] = {}
+    if not base.is_dir():
+        print(f"Warning: Not a directory: {base}", file=sys.stderr)
+        return result
+    for f in sorted(base.rglob("*")):
+        if f.is_file() and not f.name.startswith("."):
+            rel = str(f.relative_to(base))
+            result[rel] = f.read_text(encoding="utf-8")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+
+
+def main(argv: Optional[List[str]] = None) -> None:
+    """CLI entry point — parse arguments, build tool, execute command.
+
+    Parameters
+    ----------
+    argv : list[str] or None
+        Command-line arguments.  When ``None``, reads from ``sys.argv``.
+    """
+    parser = build_cli_parser()
+    args = parser.parse_args(argv)
+
+    # ── Build the tool ────────────────────────────────────────────────
+    tool = OutputExportTool(force=args.force)
+    command = args.command
+
+    # ── Dispatch ──────────────────────────────────────────────────────
+    result_str: str
+
+    if command == "write-syllabus":
+        content = _read_content(
+            args.content, getattr(args, "content_file", None)
+        )
+        result_str = tool._handle_write_syllabus(
+            {"course_name": args.course_name, "content": content}
+        )
+
+    elif command == "write-labs":
+        files_dict = json.loads(args.files)
+        if args.files_dir:
+            files_dict.update(_collect_files_from_dir(args.files_dir))
+        if not files_dict:
+            result_str = _err(
+                "No files provided.  Use --files or --files-dir to "
+                "specify lab content."
+            )
+        else:
+            result_str = tool._handle_write_labs(
+                {
+                    "course_name": args.course_name,
+                    "tier": args.tier,
+                    "files": files_dict,
+                }
+            )
+
+    elif command == "generate-manifest":
+        result_str = tool._handle_generate_manifest(
+            {"course_name": args.course_name}
+        )
+
+    elif command == "write-file":
+        content = _read_content(
+            args.content, getattr(args, "content_file", None)
+        )
+        result_str = tool._handle_write_file(
+            {"path": args.path, "content": content}
+        )
+
+    elif command == "write-directory-tree":
+        files_dict = json.loads(args.files)
+        result_str = tool._handle_write_directory_tree(
+            {"base_path": args.base_path, "files": files_dict}
+        )
+
+    else:
+        result_str = _err(f"Unknown command: '{command}'.")
+
+    # ── Print result ──────────────────────────────────────────────────
+    try:
+        parsed = json.loads(result_str)
+        status = parsed.get("status", "unknown")
+        message = parsed.get("message", "")
+    except json.JSONDecodeError:
+        status = "unknown"
+        message = result_str
+
+    if status == "ok":
+        path = json.loads(result_str).get("path", "")
+        if path:
+            print(f"OK: {message}")
+            print(f"     -> {path}")
+        else:
+            print(f"OK: {message}")
+    else:
+        print(f"ERROR: {message}", file=sys.stderr)
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Self-test
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    main()
