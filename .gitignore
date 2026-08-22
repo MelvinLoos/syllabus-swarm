@@ -64,3 +64,6 @@ docker-compose.override.yml
 
 # --- Repomix / AI tooling outputs ---
 *.repomix.*
+
+# --- Generated output (never commit) ---
+output/

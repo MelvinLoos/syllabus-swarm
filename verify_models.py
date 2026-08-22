@@ -76,7 +76,7 @@ V2_ASSIGNMENTS: dict[str, dict[str, str]] = {
         "rationale": "Deep reasoning for syllabus design",
     },
     LAB_DEVELOPER: {
-        "model": "qwen/qwen3-coder",
+        "model": "openrouter/qwen/qwen3-coder",
         "env_var": "AGENT_LAB_DEVELOPER_MODEL",
         "rationale": "Purpose-built code generation",
     },
