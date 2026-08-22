@@ -17,21 +17,14 @@ Validates the 4-tier fallback chain implemented by
 Every test isolates the environment with ``unittest.mock.patch.dict`` using
 ``clear=True`` so that the ``.env`` values loaded at import time (via
 ``load_dotenv``) cannot leak into the assertions.
-
-Run with::
-
-    python -m unittest test_llm_factory -v
 """
 
 from __future__ import annotations
 
 import os
-import sys
-import unittest
-from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pytest
 
 from src.llm_factory import (
     CURRICULUM_ARCHITECT,
@@ -73,7 +66,12 @@ def _env(*extra: dict[str, str]) -> dict[str, str]:
     return result
 
 
-class TestModelFallbackChain(unittest.TestCase):
+# ---------------------------------------------------------------------------
+# Model fallback chain
+# ---------------------------------------------------------------------------
+
+
+class TestModelFallbackChain:
     """Tests for the MODEL property's 4-tier fallback chain."""
 
     def test_per_agent_override_takes_highest_priority(self) -> None:
@@ -85,7 +83,7 @@ class TestModelFallbackChain(unittest.TestCase):
         })
         with patch.dict(os.environ, env, clear=True):
             config = get_effective_config(CURRICULUM_ARCHITECT)
-            self.assertEqual(config["model"], "openai/per-agent-model")
+            assert config["model"] == "openai/per-agent-model"
 
     def test_fallback_to_agent_default_model(self) -> None:
         """Tier 2: AGENT_DEFAULT_MODEL used when no per-agent override set."""
@@ -95,22 +93,29 @@ class TestModelFallbackChain(unittest.TestCase):
         })
         with patch.dict(os.environ, env, clear=True):
             config = get_effective_config(CURRICULUM_ARCHITECT)
-            self.assertEqual(config["model"], "openai/default-model")
+            assert config["model"] == "openai/default-model"
 
     def test_fallback_to_legacy_openrouter_model(self) -> None:
         """Tier 3: legacy OPENROUTER_MODEL used when no per-agent/default."""
-        with patch.dict(os.environ, _env({"OPENROUTER_MODEL": "openai/legacy-model"}), clear=True):
+        with patch.dict(
+            os.environ, _env({"OPENROUTER_MODEL": "openai/legacy-model"}), clear=True
+        ):
             config = get_effective_config(CURRICULUM_ARCHITECT)
-            self.assertEqual(config["model"], "openai/legacy-model")
+            assert config["model"] == "openai/legacy-model"
 
     def test_fallback_to_hardcoded_default_model(self) -> None:
         """Tier 4: hardcoded default used when nothing is configured."""
         with patch.dict(os.environ, _env(), clear=True):
             config = get_effective_config(CURRICULUM_ARCHITECT)
-            self.assertEqual(config["model"], HARDCODED_MODEL)
+            assert config["model"] == HARDCODED_MODEL
 
 
-class TestNumericFallbackChain(unittest.TestCase):
+# ---------------------------------------------------------------------------
+# Numeric fallback chain
+# ---------------------------------------------------------------------------
+
+
+class TestNumericFallbackChain:
     """Temperature and max_tokens follow the exact same chain as MODEL."""
 
     def test_temperature_follows_fallback_chain(self) -> None:
@@ -120,22 +125,25 @@ class TestNumericFallbackChain(unittest.TestCase):
             "AGENT_DEFAULT_TEMPERATURE": "0.5",
             "AGENT_TEMPERATURE": "0.3",
         }), clear=True):
-            self.assertEqual(build_llm_for_agent(CURRICULUM_ARCHITECT).temperature, 0.7)
+            assert build_llm_for_agent(CURRICULUM_ARCHITECT).temperature == 0.7
 
         # Tier 2: agent-wide default
         with patch.dict(os.environ, _env({
             "AGENT_DEFAULT_TEMPERATURE": "0.5",
             "AGENT_TEMPERATURE": "0.3",
         }), clear=True):
-            self.assertEqual(build_llm_for_agent(CURRICULUM_ARCHITECT).temperature, 0.5)
+            assert build_llm_for_agent(CURRICULUM_ARCHITECT).temperature == 0.5
 
         # Tier 3: legacy global
         with patch.dict(os.environ, _env({"AGENT_TEMPERATURE": "0.3"}), clear=True):
-            self.assertEqual(build_llm_for_agent(CURRICULUM_ARCHITECT).temperature, 0.3)
+            assert build_llm_for_agent(CURRICULUM_ARCHITECT).temperature == 0.3
 
         # Tier 4: hardcoded default
         with patch.dict(os.environ, _env(), clear=True):
-            self.assertEqual(build_llm_for_agent(CURRICULUM_ARCHITECT).temperature, HARDCODED_TEMPERATURE)
+            assert (
+                build_llm_for_agent(CURRICULUM_ARCHITECT).temperature
+                == HARDCODED_TEMPERATURE
+            )
 
     def test_max_tokens_follows_fallback_chain(self) -> None:
         # Tier 1: per-agent override
@@ -144,47 +152,59 @@ class TestNumericFallbackChain(unittest.TestCase):
             "AGENT_DEFAULT_MAX_TOKENS": "4096",
             "AGENT_MAX_TOKENS": "8192",
         }), clear=True):
-            self.assertEqual(build_llm_for_agent(CURRICULUM_ARCHITECT).max_tokens, 2048)
+            assert build_llm_for_agent(CURRICULUM_ARCHITECT).max_tokens == 2048
 
         # Tier 2: agent-wide default
         with patch.dict(os.environ, _env({
             "AGENT_DEFAULT_MAX_TOKENS": "4096",
             "AGENT_MAX_TOKENS": "8192",
         }), clear=True):
-            self.assertEqual(build_llm_for_agent(CURRICULUM_ARCHITECT).max_tokens, 4096)
+            assert build_llm_for_agent(CURRICULUM_ARCHITECT).max_tokens == 4096
 
         # Tier 3: legacy global
         with patch.dict(os.environ, _env({"AGENT_MAX_TOKENS": "8192"}), clear=True):
-            self.assertEqual(build_llm_for_agent(CURRICULUM_ARCHITECT).max_tokens, 8192)
+            assert build_llm_for_agent(CURRICULUM_ARCHITECT).max_tokens == 8192
 
         # Tier 4: hardcoded default
         with patch.dict(os.environ, _env(), clear=True):
-            self.assertEqual(build_llm_for_agent(CURRICULUM_ARCHITECT).max_tokens, HARDCODED_MAX_TOKENS)
+            assert (
+                build_llm_for_agent(CURRICULUM_ARCHITECT).max_tokens
+                == HARDCODED_MAX_TOKENS
+            )
 
 
-class TestBuildLLMNoEnvironment(unittest.TestCase):
+# ---------------------------------------------------------------------------
+# Build LLM with no environment
+# ---------------------------------------------------------------------------
+
+
+class TestBuildLLMNoEnvironment:
     """build_llm_for_agent always returns a usable LLM with only API key set."""
 
     def test_returns_llm_with_all_defaults_when_only_api_key_set(self) -> None:
         with patch.dict(os.environ, _env(), clear=True):
             llm = build_llm_for_agent(CURRICULUM_ARCHITECT)
-            self.assertIsNotNone(llm)
-            self.assertEqual(llm.model, HARDCODED_MODEL_STRIPPED)
-            self.assertEqual(llm.temperature, HARDCODED_TEMPERATURE)
-            self.assertEqual(llm.top_p, HARDCODED_TOP_P)
-            self.assertEqual(llm.max_tokens, HARDCODED_MAX_TOKENS)
-            self.assertEqual(llm.base_url, OPENROUTER_BASE_URL)
+            assert llm is not None
+            assert llm.model == HARDCODED_MODEL_STRIPPED
+            assert llm.temperature == HARDCODED_TEMPERATURE
+            assert llm.top_p == HARDCODED_TOP_P
+            assert llm.max_tokens == HARDCODED_MAX_TOKENS
+            assert llm.base_url == OPENROUTER_BASE_URL
 
     def test_all_known_agents_build_for_every_role(self) -> None:
         with patch.dict(os.environ, _env(), clear=True):
             for role in ALL_ROLES:
-                with self.subTest(role=role):
-                    llm = build_llm_for_agent(role)
-                    self.assertIsNotNone(llm)
-                    self.assertEqual(llm.base_url, OPENROUTER_BASE_URL)
+                llm = build_llm_for_agent(role)
+                assert llm is not None, f"LLM should not be None for role {role}"
+                assert llm.base_url == OPENROUTER_BASE_URL
 
 
-class TestBackwardCompatibility(unittest.TestCase):
+# ---------------------------------------------------------------------------
+# Backward compatibility
+# ---------------------------------------------------------------------------
+
+
+class TestBackwardCompatibility:
     """Legacy globals keep existing agents working unchanged."""
 
     def test_legacy_globals_drive_all_agents_without_per_agent_vars(self) -> None:
@@ -196,12 +216,11 @@ class TestBackwardCompatibility(unittest.TestCase):
         })
         with patch.dict(os.environ, env, clear=True):
             for role in ALL_ROLES:
-                with self.subTest(role=role):
-                    llm = build_llm_for_agent(role)
-                    self.assertEqual(llm.model, "legacy-model")
-                    self.assertEqual(llm.temperature, 0.4)
-                    self.assertEqual(llm.top_p, 0.2)
-                    self.assertEqual(llm.max_tokens, 4096)
+                llm = build_llm_for_agent(role)
+                assert llm.model == "legacy-model", f"Failed for role {role}"
+                assert llm.temperature == 0.4, f"Failed for role {role}"
+                assert llm.top_p == 0.2, f"Failed for role {role}"
+                assert llm.max_tokens == 4096, f"Failed for role {role}"
 
     def test_per_agent_vars_do_not_leak_across_agents(self) -> None:
         """Per-agent override for one role does not affect other roles."""
@@ -214,12 +233,17 @@ class TestBackwardCompatibility(unittest.TestCase):
             lab_dev = build_llm_for_agent(LAB_DEVELOPER)
             exporter = build_llm_for_agent(OUTPUT_EXPORTER)
 
-            self.assertEqual(architect.model, "architect-only")
-            self.assertEqual(lab_dev.model, "legacy-model")
-            self.assertEqual(exporter.model, "legacy-model")
+            assert architect.model == "architect-only"
+            assert lab_dev.model == "legacy-model"
+            assert exporter.model == "legacy-model"
 
 
-class TestGetEffectiveConfig(unittest.TestCase):
+# ---------------------------------------------------------------------------
+# get_effective_config
+# ---------------------------------------------------------------------------
+
+
+class TestGetEffectiveConfig:
     """get_effective_config() mirrors build_llm_for_agent resolution."""
 
     def test_effective_config_resolves_the_same_chain(self) -> None:
@@ -229,37 +253,38 @@ class TestGetEffectiveConfig(unittest.TestCase):
         })
         with patch.dict(os.environ, env, clear=True):
             config = get_effective_config(CURRICULUM_ARCHITECT)
-            self.assertEqual(config["role"], CURRICULUM_ARCHITECT)
-            self.assertEqual(config["model"], "openai/per-agent-model")
-            self.assertEqual(config["temperature"], 0.6)
-            self.assertEqual(config["max_tokens"], HARDCODED_MAX_TOKENS)
-            self.assertEqual(config["base_url"], OPENROUTER_BASE_URL)
+            assert config["role"] == CURRICULUM_ARCHITECT
+            assert config["model"] == "openai/per-agent-model"
+            assert config["temperature"] == 0.6
+            assert config["max_tokens"] == HARDCODED_MAX_TOKENS
+            assert config["base_url"] == OPENROUTER_BASE_URL
 
     def test_effective_config_matches_built_llm(self) -> None:
         env = _env({"AGENT_DEFAULT_MODEL": "openai/default-model"})
         with patch.dict(os.environ, env, clear=True):
             config = get_effective_config(LAB_DEVELOPER)
             llm = build_llm_for_agent(LAB_DEVELOPER)
-            self.assertEqual(config["model"], "openai/default-model")
-            self.assertEqual(llm.model, "default-model")
-            self.assertEqual(llm.temperature, config["temperature"])
-            self.assertEqual(llm.top_p, config["top_p"])
-            self.assertEqual(llm.max_tokens, config["max_tokens"])
+            assert config["model"] == "openai/default-model"
+            assert llm.model == "default-model"
+            assert llm.temperature == config["temperature"]
+            assert llm.top_p == config["top_p"]
+            assert llm.max_tokens == config["max_tokens"]
 
 
-class TestInputValidation(unittest.TestCase):
+# ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+
+class TestInputValidation:
     """build_llm_for_agent rejects invalid agent_role inputs."""
 
     def test_empty_role_raises_value_error(self) -> None:
         with patch.dict(os.environ, _env(), clear=True):
-            with self.assertRaises(ValueError):
+            with pytest.raises(ValueError):
                 build_llm_for_agent("")
 
     def test_non_string_role_raises_value_error(self) -> None:
         with patch.dict(os.environ, _env(), clear=True):
-            with self.assertRaises(ValueError):
+            with pytest.raises(ValueError):
                 build_llm_for_agent(None)  # type: ignore[arg-type]
-
-
-if __name__ == "__main__":
-    unittest.main()
