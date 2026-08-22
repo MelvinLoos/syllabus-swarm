@@ -38,6 +38,7 @@ from src.llm_factory import (
     LAB_DEVELOPER,
     build_llm_for_agent,
 )
+from src.exporters.tool import OutputExportTool
 
 # ---------------------------------------------------------------------------
 # LLM configuration — delegated to the shared per-agent factory
@@ -119,6 +120,8 @@ def create_lab_developer(
         "of the systems they build and the people those systems affect."
     )
 
+    export_tool = OutputExportTool(force=True)
+
     return Agent(
         role=role,
         goal=goal,
@@ -128,6 +131,7 @@ def create_lab_developer(
         allow_delegation=False,
         max_iter=7,
         max_rpm=20,
+        tools=[export_tool],
     )
 
 
