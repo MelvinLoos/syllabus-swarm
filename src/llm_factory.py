@@ -4,7 +4,7 @@ llm_factory.py — Shared LLM Builder with Per-Agent Configuration
 
 Issue #5: Per-Agent Model Configuration — Specialized LLMs for Each Agent
 
-Provides a single, canonical source of truth for building ``ChatOpenAI``
+Provides a single, canonical source of truth for building ``crewai.LLM``
 instances wired to **OpenRouter**.  Every agent in the swarm should obtain
 its LLM through :func:`build_llm_for_agent` rather than reading environment
 variables directly.
@@ -37,7 +37,7 @@ import os
 from typing import Optional
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+from crewai import LLM
 
 # ---------------------------------------------------------------------------
 # Bootstrap environment — load .env so os.getenv picks up values.
@@ -152,8 +152,8 @@ def build_llm_for_agent(
     agent_role: str,
     *,
     api_key: Optional[str] = None,
-) -> ChatOpenAI:
-    """Build a ChatOpenAI instance configured for a specific agent.
+) -> LLM:
+    """Build a ``crewai.LLM`` instance configured for a specific agent.
 
     All agents connect through **OpenRouter** (https://openrouter.ai/api/v1).
     Model, temperature, top_p, and max_tokens are resolved through a 4-tier
@@ -172,8 +172,8 @@ def build_llm_for_agent(
 
     Returns
     -------
-    ChatOpenAI
-        A fully-configured ChatOpenAI instance wired to OpenRouter.
+    LLM
+        A fully-configured ``crewai.LLM`` instance wired to OpenRouter.
 
     Raises
     ------
@@ -221,7 +221,7 @@ def build_llm_for_agent(
         )
     )
 
-    return ChatOpenAI(
+    return LLM(
         model=model,
         api_key=resolved_api_key,
         base_url=OPENROUTER_BASE_URL,
@@ -330,13 +330,10 @@ if __name__ == "__main__":
     try:
         llm = build_llm_for_agent(CURRICULUM_ARCHITECT)
         print(f"build_llm_for_agent({CURRICULUM_ARCHITECT}) succeeded.")
-        print(f"   model_name:      {llm.model_name}")
+        print(f"   model:           {llm.model}")
         print(f"   temperature:     {llm.temperature}")
-        model_kwargs_filtered = {
-            k: v for k, v in llm.model_kwargs.items()
-            if k in ("top_p", "max_tokens")
-        }
-        print(f"   model_kwargs:    {model_kwargs_filtered}")
-        print(f"   openai_api_base: {llm.openai_api_base}")
+        print(f"   top_p:           {llm.top_p}")
+        print(f"   max_tokens:      {llm.max_tokens}")
+        print(f"   base_url:        {llm.base_url}")
     except Exception as exc:
         print(f"build_llm_for_agent() raised: {exc}")

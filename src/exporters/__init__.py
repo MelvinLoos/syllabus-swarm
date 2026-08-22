@@ -17,6 +17,11 @@ from src.exporters.manifest import (
     update_output_manifest,
 )
 
+from src.exporters.output_exporter import (
+    build_output_exporter_llm,
+    get_output_exporter_llm,
+)
+
 __all__ = [
     # file_writer
     "FileWriteError",
@@ -31,4 +36,7 @@ __all__ = [
     "ArtifactSummary",
     "ManifestData",
     "update_output_manifest",
+    # output_exporter
+    "build_output_exporter_llm",
+    "get_output_exporter_llm",
 ]

@@ -16,64 +16,32 @@ literacies:
   • Human Literacy — ethics, communication, collaboration, cultural
     awareness, and the human-centred dimensions of technology.
 
-The agent connects to DeepSeek V4 Pro via OpenRouter using a
-low-temperature configuration for reproducible, high-quality output.
+The agent obtains its LLM through
+:func:`src.llm_factory.build_llm_for_agent` using the
+``CURRICULUM_ARCHITECT`` role, so model selection, temperature, and
+other generation parameters are configured in one place
+(:mod:`src.llm_factory`) following the project-wide per-agent fallback chain.
 """
 
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from crewai import Agent
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+from crewai import LLM
 
-# ---------------------------------------------------------------------------
-# Bootstrap environment
-# ---------------------------------------------------------------------------
-load_dotenv()
-
-# ---------------------------------------------------------------------------
-# LLM configuration — OpenRouter bridge -> DeepSeek V4 Pro
-# ---------------------------------------------------------------------------
-OPENROUTER_BASE_URL: str = os.getenv(
-    "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+from src.llm_factory import (
+    CURRICULUM_ARCHITECT,
+    build_llm_for_agent,
 )
-OPENROUTER_MODEL: str = os.getenv(
-    "OPENROUTER_MODEL", "deepseek/deepseek-r1"
-)
-OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
-
-AGENT_TEMPERATURE: float = float(os.getenv("AGENT_TEMPERATURE", "0.2"))
-AGENT_TOP_P: float = float(os.getenv("AGENT_TOP_P", "0.1"))
-AGENT_MAX_TOKENS: int = int(os.getenv("AGENT_MAX_TOKENS", "8192"))
-
 
 # ---------------------------------------------------------------------------
-# Helper — build ChatOpenAI instance wired to OpenRouter
+# LLM configuration — delegated to the shared per-agent factory
 # ---------------------------------------------------------------------------
-
-def _build_llm() -> ChatOpenAI:
-    """Build a ChatOpenAI LLM pointed at OpenRouter.
-
-    Returns a ChatOpenAI configured for deterministic, structured Markdown
-    generation via DeepSeek V4 Pro with low temperature (0.2) and narrow
-    nucleus sampling (top_p=0.1).
-    """
-    if not OPENROUTER_API_KEY:
-        raise RuntimeError(
-            "OPENROUTER_API_KEY is not set. "
-            "Copy .env.example -> .env and fill in your OpenRouter API key."
-        )
-    return ChatOpenAI(
-        model=OPENROUTER_MODEL,
-        api_key=OPENROUTER_API_KEY,
-        base_url=OPENROUTER_BASE_URL,
-        temperature=AGENT_TEMPERATURE,
-        top_p=AGENT_TOP_P,
-        max_tokens=AGENT_MAX_TOKENS,
-    )
+# The LLM instance for this agent is built by
+# ``build_llm_for_agent(CURRICULUM_ARCHITECT)`` from src.llm_factory, which
+# applies the project-wide 4-tier fallback chain (per-agent override ->
+# agent-wide default -> legacy globals -> hardcoded defaults).
 
 
 # ---------------------------------------------------------------------------
@@ -82,15 +50,16 @@ def _build_llm() -> ChatOpenAI:
 
 def create_curriculum_architect(
     *,
-    llm: Optional[ChatOpenAI] = None,
+    llm: Optional[LLM] = None,
     verbose: bool = False,
 ) -> Agent:
     """Create the Curriculum Architect CrewAI agent.
 
     Parameters
     ----------
-    llm : ChatOpenAI or None
-        Pre-built LLM; auto-created via _build_llm() when None.
+    llm : LLM or None
+        Pre-built LLM; auto-created via
+        ``build_llm_for_agent(CURRICULUM_ARCHITECT)`` when None.
     verbose : bool
         Enable detailed agent logging.
 
@@ -100,7 +69,7 @@ def create_curriculum_architect(
         Fully-configured CrewAI Agent, grounded in the Humanics framework.
     """
     if llm is None:
-        llm = _build_llm()
+        llm = build_llm_for_agent(CURRICULUM_ARCHITECT)
 
     role = (
         "Curriculum Architect — The Master Syllabus Designer\n\n"
@@ -196,11 +165,14 @@ def get_architect(*, verbose: bool = False) -> Agent:
 # Self-test
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    from src.llm_factory import get_effective_config
+
     agent = create_curriculum_architect(verbose=True)
+    config = get_effective_config(CURRICULUM_ARCHITECT)
     print("✅ Curriculum Architect agent created successfully.\n")
     print(f"   Role:      {agent.role.split(chr(10))[0]}")
-    print(f"   Model:     {OPENROUTER_MODEL}")
-    print(f"   Base URL:  {OPENROUTER_BASE_URL}")
-    print(f"   Temp:      {AGENT_TEMPERATURE}")
-    print(f"   Top-P:     {AGENT_TOP_P}")
-    print(f"   Max Tokens:{AGENT_MAX_TOKENS}")
+    print(f"   Model:     {config['model']}")
+    print(f"   Base URL:  {config['base_url']}")
+    print(f"   Temp:      {config['temperature']}")
+    print(f"   Top-P:     {config['top_p']}")
+    print(f"   Max Tokens:{config['max_tokens']}")
