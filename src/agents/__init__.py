@@ -1,0 +1,1 @@
+# syllabus-swarm — agents package
