@@ -69,7 +69,7 @@ Supported properties and their defaults:
 
 | Property | Default | Description |
 |---|---|---|
-| `MODEL` | `deepseek/deepseek-r1` (fallback) | OpenRouter model identifier |
+| `MODEL` | `deepseek/deepseek-v4-pro` (fallback) | OpenRouter model identifier |
 | `TEMPERATURE` | `0.2` | Generation randomness (0.0 = deterministic, 1.0 = creative) |
 | `MAX_TOKENS` | `8192` | Maximum completion tokens per agent call |
 | `TOP_P` | `0.1` | Nucleus sampling threshold |
@@ -90,7 +90,7 @@ Supported properties and their defaults:
 
 ### Backward-Compatible Fallback
 
-The hardcoded catch-all model is `deepseek/deepseek-r1`. Any agent that lacks both a per-agent override and an `AGENT_DEFAULT_MODEL` will use this model. This ensures existing `.env` files without per-agent configuration continue to work.
+The hardcoded catch-all model is `deepseek/deepseek-v4-pro`. Any agent that lacks both a per-agent override and an `AGENT_DEFAULT_MODEL` will use this model. This ensures existing `.env` files without per-agent configuration continue to work.
 
 ### Per-Agent Model Defaults (v2)
 
