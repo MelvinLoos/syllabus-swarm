@@ -21,6 +21,7 @@ Usage
   python -m src.main "Full-Stack Web Development"
   python src/main.py             # interactive prompt
   python src/main.py "ML Basics" --skip-labs  # syllabus only
+  python src/main.py "ML Basics" --resume-from output/2026-08-22_153000_ML_Basics
 
 Environment
 -----------
@@ -79,6 +80,29 @@ def _validate_name(name: str) -> str:
 def _should_skip_labs() -> bool:
     """Check CLI arguments for --skip-labs flag."""
     return "--skip-labs" in sys.argv
+
+
+def _get_resume_dir() -> str | None:
+    """Extract the --resume-from value from CLI arguments, or None."""
+    try:
+        idx = sys.argv.index("--resume-from")
+    except ValueError:
+        return None
+    if idx + 1 >= len(sys.argv):
+        print("❌ --resume-from requires a directory path.", file=sys.stderr)
+        sys.exit(1)
+    return sys.argv[idx + 1]
+
+
+def _clean_cli_flags() -> None:
+    """Remove known CLI flags from sys.argv so they don't pollute the course name."""
+    for flag in ("--skip-labs", "--resume-from"):
+        while flag in sys.argv:
+            idx = sys.argv.index(flag)
+            # Remove the flag and its value (if it has one)
+            if flag == "--resume-from" and idx + 1 < len(sys.argv):
+                sys.argv.pop(idx)  # value
+            sys.argv.pop(idx)  # flag
 
 
 # ---------------------------------------------------------------------------
@@ -221,8 +245,18 @@ def main() -> None:
 
     # --- 1. Gather input -------------------------------------------------
     skip_labs = _should_skip_labs()
-    while "--skip-labs" in sys.argv:
-        sys.argv.remove("--skip-labs")
+    resume_dir = _get_resume_dir()
+
+    # Validate: --skip-labs + --resume-from is a no-op
+    if skip_labs and resume_dir:
+        print(
+            "❌ --skip-labs and --resume-from cannot be used together "
+            "(this would be a no-op).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    _clean_cli_flags()
 
     course_name = _gather_course_name()
     course_name = _validate_name(course_name)
@@ -231,13 +265,18 @@ def main() -> None:
     print(f"  🐝  Syllabus Swarm")
     print(f"  Course:     {course_name}")
     print(f"  Model:      Per-agent via OpenRouter (see .env.example)")
+    if resume_dir:
+        print(f"  Resume:     {resume_dir}")
     print(f"  Labs:       {'Skip' if skip_labs else 'Generate'}")
     print(f"{'=' * 60}\n")
 
     # --- 2. Run the crew -------------------------------------------------
     try:
         result = run_syllabus_crew(
-            course_name, verbose=True, skip_labs=skip_labs
+            course_name,
+            verbose=True,
+            skip_labs=skip_labs,
+            resume_dir=resume_dir,
         )
     except RuntimeError as exc:
         print(f"\n❌  Fatal Runtime Error: {exc}", file=sys.stderr)

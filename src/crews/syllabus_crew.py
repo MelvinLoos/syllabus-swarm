@@ -18,6 +18,7 @@ output as grounding context for designing relevant, scaffolded exercises.
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -25,8 +26,8 @@ from crewai import Agent, Crew, Process
 
 from src.agents.curriculum_architect import get_architect
 from src.agents.lab_developer import get_lab_developer
-from src.tasks.syllabus_generation import create_syllabus_task
-from src.tasks.lab_generation import create_lab_task
+from src.tasks.syllabus_generation import create_syllabus_generation_task
+from src.tasks.lab_generation import create_lab_generation_task
 from src.exporters import (
     write_syllabus,
     write_file,
@@ -40,8 +41,7 @@ from src.exporters import (
 # ---------------------------------------------------------------------------
 
 _PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
-SYLLABUS_OUTPUT_DIR: Path = _PROJECT_ROOT / "output" / "syllabus"
-LABS_OUTPUT_DIR: Path = _PROJECT_ROOT / "output" / "labs"
+OUTPUT_ROOT: Path = _PROJECT_ROOT / "output"
 
 # Tier names used for the lab directory scaffolding.
 _TIERS: list[Tuple[str, str]] = [
@@ -68,9 +68,9 @@ def _sanitize_filename(course_name: str) -> str:
     )
 
 
-def _create_lab_scaffolding(course_safe_name: str) -> Path:
-    """Create the tiered lab directory scaffolding under output/labs/."""
-    base = LABS_OUTPUT_DIR / course_safe_name
+def _create_lab_scaffolding(labs_base_path: Path) -> Path:
+    """Create the tiered lab directory scaffolding under *labs_base_path*."""
+    base = labs_base_path
     base.mkdir(parents=True, exist_ok=True)
 
     for tier_dir_name, tier_label in _TIERS:
@@ -124,9 +124,50 @@ class CrewResult:
     @property
     def all_succeeded(self) -> bool:
         return self.syllabus_ok and self.labs_ok
+
+
 # ---------------------------------------------------------------------------
 # Crew runner
 # ---------------------------------------------------------------------------
+
+
+def _generate_run_id(course_safe_name: str) -> str:
+    """Generate a unique, human-readable run identifier.
+
+    Format: ``YYYY-MM-DD_HHMMSS_<course_safe_name>``
+    """
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
+    return f"{timestamp}_{course_safe_name}"
+
+
+def _find_syllabus_in_dir(resume_dir: Path) -> Path:
+    """Locate the syllabus markdown file inside a resume directory.
+
+    Looks for a ``.md`` file inside ``<resume_dir>/syllabus/``.
+    Returns the first match found.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the resume directory or syllabus subdirectory doesn't exist,
+        or if no ``.md`` file is found.
+    """
+    if not resume_dir.exists():
+        raise FileNotFoundError(f"Resume directory not found: {resume_dir}")
+
+    syllabus_subdir = resume_dir / "syllabus"
+    if not syllabus_subdir.exists():
+        raise FileNotFoundError(
+            f"No 'syllabus/' subdirectory found in resume directory: {resume_dir}"
+        )
+
+    md_files = sorted(syllabus_subdir.glob("*.md"))
+    if not md_files:
+        raise FileNotFoundError(
+            f"No .md syllabus file found in: {syllabus_subdir}"
+        )
+
+    return md_files[0]
 
 
 def run_syllabus_crew(
@@ -136,12 +177,18 @@ def run_syllabus_crew(
     architect_agent: Optional[Agent] = None,
     lab_dev_agent: Optional[Agent] = None,
     skip_labs: bool = False,
+    resume_dir: str | Path | None = None,
 ) -> CrewResult:
     """Run both agents sequentially and return a full result summary.
 
     Execution order:
-      1. Curriculum Architect generates a syllabus.
+      1. Curriculum Architect generates a syllabus (or loads from disk if
+         *resume_dir* is provided).
       2. Lab & Project Developer processes the syllabus to generate tiered labs.
+
+    All output is scoped under ``output/<run_id>/`` where *run_id* is a
+    timestamp + course-slug combination, ensuring every pipeline run
+    produces a unique, non-overlapping directory.
 
     Parameters
     ----------
@@ -155,6 +202,13 @@ def run_syllabus_crew(
         Pre-built Lab Developer agent; lazily created when None.
     skip_labs : bool
         If True, only run the Curriculum Architect (backward-compatible).
+    resume_dir : str, Path, or None
+        Path to a previous run directory (e.g.
+        ``output/2026-08-22_153000_Course_Name``). When provided, the
+        Curriculum Architect is **skipped** and the existing syllabus is
+        loaded from disk instead. This saves API costs and enables a
+        human-in-the-loop workflow where the syllabus can be manually
+        edited before generating labs.
 
     Returns
     -------
@@ -163,65 +217,112 @@ def run_syllabus_crew(
     """
     safe_name = _sanitize_filename(course_name)
 
-    syllabus_dir = SYLLABUS_OUTPUT_DIR
-    syllabus_dir.mkdir(parents=True, exist_ok=True)
-    syllabus_path = syllabus_dir / f"{safe_name}.md"
-
-    labs_base_path = LABS_OUTPUT_DIR / safe_name
-
-    # ── 1. Curriculum Architect ────────────────────────────────────────
-    if architect_agent is None:
-        architect = get_architect(verbose=verbose)
-    else:
-        architect = architect_agent
-
-    syllabus_task = create_syllabus_task(agent=architect, course_name=course_name)
-
+    # ── 0. Handle resume mode ──────────────────────────────────────────
     syllabus_ok = False
     syllabus_error: str | None = None
     syllabus_raw: str = ""
+    syllabus_path: Path
 
-    try:
-        architect_crew = Crew(
-            agents=[architect],
-            tasks=[syllabus_task],
-            process=Process.sequential,
-            verbose=verbose,
+    if resume_dir is not None:
+        resume_path = Path(resume_dir)
+        try:
+            syllabus_path = _find_syllabus_in_dir(resume_path)
+            syllabus_raw = syllabus_path.read_text(encoding="utf-8").strip()
+
+            if not syllabus_raw:
+                raise RuntimeError(
+                    f"Syllabus file is empty: {syllabus_path}"
+                )
+
+            syllabus_ok = True
+            if verbose:
+                print(f"  📄  Loaded syllabus from: {syllabus_path}")
+                print(f"      ({len(syllabus_raw):,} characters)")
+
+        except Exception as exc:
+            syllabus_error = str(exc)
+            # Create a fallback path so the rest of the function has
+            # something to work with.
+            syllabus_path = OUTPUT_ROOT / "resume_failed" / f"{safe_name}.md"
+            if verbose:
+                print(f"  ❌  Failed to load syllabus from resume dir: {exc}",
+                      file=sys.stderr)
+
+        # When resuming, we still create a fresh run directory for the
+        # labs output (so each resume produces its own timestamped output).
+        run_id = _generate_run_id(safe_name)
+        run_dir = OUTPUT_ROOT / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        labs_dir = run_dir / "labs"
+        labs_dir.mkdir(parents=True, exist_ok=True)
+        labs_base_path = labs_dir / safe_name
+
+    else:
+        # ── Fresh run: create new run directory ────────────────────────
+        run_id = _generate_run_id(safe_name)
+        run_dir = OUTPUT_ROOT / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        syllabus_dir = run_dir / "syllabus"
+        syllabus_dir.mkdir(parents=True, exist_ok=True)
+        syllabus_path = syllabus_dir / f"{safe_name}.md"
+
+        labs_dir = run_dir / "labs"
+        labs_dir.mkdir(parents=True, exist_ok=True)
+        labs_base_path = labs_dir / safe_name
+
+        # ── 1. Curriculum Architect ────────────────────────────────────
+        if architect_agent is None:
+            architect = get_architect(verbose=verbose)
+        else:
+            architect = architect_agent
+
+        syllabus_task = create_syllabus_generation_task(
+            agent=architect, course_name=course_name
         )
-        architect_result = architect_crew.kickoff()
-        syllabus_raw = (
-            architect_result.raw
-            if hasattr(architect_result, "raw")
-            else str(architect_result)
-        ).strip()
 
-        if not syllabus_raw:
-            raise RuntimeError(
-                "Curriculum Architect produced no output. "
-                "Check your API key, model availability, and network."
+        try:
+            architect_crew = Crew(
+                agents=[architect],
+                tasks=[syllabus_task],
+                process=Process.sequential,
+                verbose=verbose,
             )
+            architect_result = architect_crew.kickoff()
+            syllabus_raw = (
+                architect_result.raw
+                if hasattr(architect_result, "raw")
+                else str(architect_result)
+            ).strip()
 
-        syllabus_path = write_syllabus(course_name, syllabus_raw, force=True)
-        syllabus_ok = True
+            if not syllabus_raw:
+                raise RuntimeError(
+                    "Curriculum Architect produced no output. "
+                    "Check your API key, model availability, and network."
+                )
 
-    except Exception as exc:
-        syllabus_error = str(exc)
-        write_syllabus(
-            course_name,
-            f"# {course_name} — Syllabus Generation Failed\n\n"
-            f"**Error:** {syllabus_error}\n",
-            force=True,
-        )
+            write_file(syllabus_path, syllabus_raw, force=True)
+            syllabus_ok = True
+
+        except Exception as exc:
+            syllabus_error = str(exc)
+            write_file(
+                syllabus_path,
+                f"# {course_name} — Syllabus Generation Failed\n\n"
+                f"**Error:** {syllabus_error}\n",
+                force=True,
+            )
 
     # ── 2. Lab & Project Developer ─────────────────────────────────────
     labs_ok = False
     labs_error: str | None = None
 
     if skip_labs:
-        labs_base_path = _create_lab_scaffolding(safe_name)
+        _create_lab_scaffolding(labs_base_path)
         labs_ok = True
     else:
-        labs_base_path = _create_lab_scaffolding(safe_name)
+        _create_lab_scaffolding(labs_base_path)
         lab_dev = None
 
         try:
@@ -233,7 +334,7 @@ def run_syllabus_crew(
             labs_error = str(exc)
 
         if lab_dev is not None and syllabus_raw:
-            lab_task = create_lab_task(
+            lab_task = create_lab_generation_task(
                 agent=lab_dev,
                 course_name=course_name,
                 syllabus_context=syllabus_raw,
