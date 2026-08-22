@@ -250,9 +250,27 @@ def update_output_manifest(
     """
     output_dir = _PROJECT_ROOT / "output"
 
-    syllabus_entries = _scan_directory(OUTPUT_PATHS.syllabus_dir)
-    labs_entries = _scan_directory(OUTPUT_PATHS.labs_dir)
-    rubrics_entries = _scan_directory(OUTPUT_PATHS.rubrics_dir)
+    # Scan the entire output directory recursively to pick up all run
+    # subdirectories (each run is scoped under output/<run_id>/).
+    syllabus_entries: list[ArtifactSummary] = []
+    labs_entries: list[ArtifactSummary] = []
+    rubrics_entries: list[ArtifactSummary] = []
+
+    if output_dir.exists():
+        for run_dir in sorted(output_dir.iterdir()):
+            if not run_dir.is_dir() or run_dir.name.startswith("."):
+                continue
+            if run_dir.name == "README.md":
+                continue
+            syl_dir = run_dir / "syllabus"
+            if syl_dir.exists():
+                syllabus_entries.extend(_scan_directory(syl_dir))
+            lab_dir = run_dir / "labs"
+            if lab_dir.exists():
+                labs_entries.extend(_scan_directory(lab_dir))
+            rub_dir = run_dir / "rubrics"
+            if rub_dir.exists():
+                rubrics_entries.extend(_scan_directory(rub_dir))
 
     all_entries = syllabus_entries + labs_entries + rubrics_entries
     total_files = sum(e.file_count for e in all_entries)
