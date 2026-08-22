@@ -7,13 +7,15 @@ Issue #2: Core Agent — The Curriculum Architect (Humanics Alignment)
 Issue #3: Core Agent — The Lab & Project Developer (Tiered Coding Challenges)
 
 Orchestrates the full syllabus-and-labs generation pipeline:
-  1. Accepts a course name/topic via CLI argument or interactive prompt.
-  2. Runs the **Curriculum Architect** agent to generate a Humanics-aligned
+
+  0. Runs the **Intake Specialist** agent to interview the user and gather
+     rich course context mapped to Dutch SBB Kwalificatiedossiers.
+  1. Runs the **Curriculum Architect** agent to generate a Humanics-aligned
      Markdown syllabus saved to ``output/syllabus/<course_name>.md``.
-  3. Runs the **Lab & Project Developer** agent using the syllabus as
+  2. Runs the **Lab & Project Developer** agent using the syllabus as
      context to generate tiered coding labs saved under
      ``output/labs/<course_name>/``.
-  4. Prints a clear success/failure summary for both agents.
+  3. Prints a clear success/failure summary for all agents.
 
 Usage
 -----
@@ -47,6 +49,9 @@ from dotenv import load_dotenv
 # Load environment variables *before* any internal imports that read them.
 load_dotenv(dotenv_path=_PROJECT_ROOT / ".env", override=False)
 
+from crewai import Crew, Process, Task
+
+from src.agents.intake_specialist import get_intake_specialist
 from src.crews.syllabus_crew import CrewResult, run_syllabus_crew
 
 # ---------------------------------------------------------------------------
@@ -103,6 +108,175 @@ def _clean_cli_flags() -> None:
             if flag == "--resume-from" and idx + 1 < len(sys.argv):
                 sys.argv.pop(idx)  # value
             sys.argv.pop(idx)  # flag
+
+
+# ---------------------------------------------------------------------------
+# Intake Specialist — interactive interview loop
+# ---------------------------------------------------------------------------
+
+
+def _run_intake(course_name: str, *, verbose: bool = False) -> str:
+    """Run the Intake Specialist to gather rich course context.
+
+    Steps:
+      1. Send the course name to the Intake Specialist, who replies with
+         2-3 targeted clarifying questions.
+      2. Display the questions and capture the user's multi-line response.
+      3. Send the course name + user answers back to the Intake Specialist
+         for synthesis into a ``course_context`` string.
+
+    Parameters
+    ----------
+    course_name : str
+        The initial course name / topic from the user.
+    verbose : bool
+        Enable detailed agent logging.
+
+    Returns
+    -------
+    str
+        A rich ``course_context`` string synthesised from the course name
+        and the user's answers.
+    """
+    intake_agent = get_intake_specialist(verbose=verbose)
+
+    # ── Step 1: Ask clarifying questions ────────────────────────────────
+    question_task = Task(
+        description=(
+            f"The user wants a syllabus for the following course:\n\n"
+            f"**Course Name:** {course_name}\n\n"
+            f"Your task: Ask 2-3 concise, targeted clarifying questions "
+            f"about:\n"
+            f"1. The tech stack and tooling (languages, frameworks, "
+            f"platforms, version control, deployment tools)\n"
+            f"2. Which kerntaken to emphasise: planning (P1-K1), designing "
+            f"(P2-K1), building (P3-K1), and/or testing (P4-K1) software\n"
+            f"3. The student profile: BOL or BBL pathway, year level "
+            f"(1, 2, or 3), and BPV (internship) readiness\n\n"
+            f"Output ONLY the questions — no preamble, no commentary, "
+            f"no markdown formatting.  Number them 1, 2, 3.  Keep each "
+            f"question to one or two sentences."
+        ),
+        expected_output=(
+            "2-3 numbered clarifying questions about tech stack, "
+            "kerntaken focus, and student profile.  No preamble or "
+            "commentary — just the questions."
+        ),
+        agent=intake_agent,
+        async_execution=False,
+    )
+
+    print("\n🐝  Consulting the Intake Specialist...\n")
+
+    try:
+        question_crew = Crew(
+            agents=[intake_agent],
+            tasks=[question_task],
+            process=Process.sequential,
+            verbose=verbose,
+        )
+        question_result = question_crew.kickoff()
+        questions = (
+            question_result.raw
+            if hasattr(question_result, "raw")
+            else str(question_result)
+        ).strip()
+    except Exception as exc:
+        print(f"\n⚠️  Intake Specialist failed to generate questions: {exc}")
+        print("   Proceeding with bare course name as context.\n")
+        return f"Course Name: {course_name}"
+
+    # ── Step 2: Display questions and capture answers ────────────────────
+    print(f"{'─' * 60}")
+    print(questions)
+    print(f"{'─' * 60}")
+    print()
+    print("📝  Please type your answers below.")
+    print("    Press Enter twice (blank line) when finished.\n")
+
+    user_answers_lines: list[str] = []
+    try:
+        while True:
+            line = input()
+            if line.strip() == "":
+                if user_answers_lines and user_answers_lines[-1] == "":
+                    # Two blank lines in a row → done
+                    user_answers_lines.pop()  # remove the trailing blank
+                    break
+            user_answers_lines.append(line)
+    except (EOFError, KeyboardInterrupt):
+        print("\n⚠️  Input interrupted.", file=sys.stderr)
+
+    user_answers = "\n".join(user_answers_lines).strip()
+
+    if not user_answers:
+        print("\n⚠️  No answers provided. Proceeding with bare course name.\n")
+        return f"Course Name: {course_name}"
+
+    # ── Step 3: Synthesise course context ────────────────────────────────
+    synthesis_task = Task(
+        description=(
+            f"You interviewed the user about their course and received "
+            f"the following information.\n\n"
+            f"**Course Name:** {course_name}\n\n"
+            f"**Your Questions:**\n{questions}\n\n"
+            f"**User's Answers:**\n{user_answers}\n\n"
+            f"Your task: Synthesise the course name, your questions, and "
+            f"the user's answers into a single, rich ``course_context`` "
+            f"string.  This context will be passed directly to the "
+            f"Curriculum Architect agent who will design the syllabus.\n\n"
+            f"The course_context must include:\n"
+            f"- The course name and a one-sentence summary\n"
+            f"- Tech stack and tooling details\n"
+            f"- Kerntaken emphasis (which of P1-K1 through P4-K1 to focus on)\n"
+            f"- Student profile (BOL/BBL, year level, BPV readiness)\n"
+            f"- Any additional pedagogical notes or constraints mentioned\n\n"
+            f"Format the output as a clear, structured text block (NOT "
+            f"Markdown — just plain text with labelled sections).  Keep it "
+            f"concise but comprehensive — the Curriculum Architect needs "
+            f"enough detail to design a targeted syllabus."
+        ),
+        expected_output=(
+            "A rich, structured course_context string (plain text, not "
+            "Markdown) containing: course name + summary, tech stack, "
+            "kerntaken emphasis, student profile, and any additional notes."
+        ),
+        agent=intake_agent,
+        async_execution=False,
+    )
+
+    print("\n🐝  Synthesising course context...\n")
+
+    try:
+        synthesis_crew = Crew(
+            agents=[intake_agent],
+            tasks=[synthesis_task],
+            process=Process.sequential,
+            verbose=verbose,
+        )
+        synthesis_result = synthesis_crew.kickoff()
+        course_context = (
+            synthesis_result.raw
+            if hasattr(synthesis_result, "raw")
+            else str(synthesis_result)
+        ).strip()
+
+        if not course_context:
+            print("⚠️  Synthesis produced no output. Using bare course name.\n")
+            return f"Course Name: {course_name}"
+
+        print(f"{'─' * 60}")
+        print("📋  Course Context (sent to Curriculum Architect):")
+        print(f"{'─' * 60}")
+        print(course_context)
+        print(f"{'─' * 60}\n")
+
+        return course_context
+
+    except Exception as exc:
+        print(f"\n⚠️  Synthesis failed: {exc}")
+        print("   Proceeding with bare course name as context.\n")
+        return f"Course Name: {course_name}"
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +415,7 @@ def _fmt_size(num_bytes: int) -> str:
 
 
 def main() -> None:
-    """Entry point — orchestrate the syllabus + labs generation pipeline."""
+    """Entry point — orchestrate the intake + syllabus + labs pipeline."""
 
     # --- 1. Gather input -------------------------------------------------
     skip_labs = _should_skip_labs()
@@ -270,10 +444,18 @@ def main() -> None:
     print(f"  Labs:       {'Skip' if skip_labs else 'Generate'}")
     print(f"{'=' * 60}\n")
 
-    # --- 2. Run the crew -------------------------------------------------
+    # --- 2. Run Intake Specialist (skip if resuming) ---------------------
+    if resume_dir:
+        # When resuming, we already have a syllabus — no need for intake.
+        course_context = f"Course Name: {course_name}"
+        print("📋  Resume mode — skipping Intake Specialist.\n")
+    else:
+        course_context = _run_intake(course_name, verbose=True)
+
+    # --- 3. Run the crew -------------------------------------------------
     try:
         result = run_syllabus_crew(
-            course_name,
+            course_context,
             verbose=True,
             skip_labs=skip_labs,
             resume_dir=resume_dir,
@@ -286,7 +468,7 @@ def main() -> None:
         print(f"\n❌  Fatal Unexpected Error: {exc}", file=sys.stderr)
         sys.exit(3)
 
-    # --- 3. Print summary ------------------------------------------------
+    # --- 4. Print summary ------------------------------------------------
     _print_summary(result, course_name)
 
 

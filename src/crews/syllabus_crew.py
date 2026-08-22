@@ -171,8 +171,9 @@ def _find_syllabus_in_dir(resume_dir: Path) -> Path:
 
 
 def run_syllabus_crew(
-    course_name: str,
+    course_context: str,
     *,
+    course_name: str = "",
     verbose: bool = False,
     architect_agent: Optional[Agent] = None,
     lab_dev_agent: Optional[Agent] = None,
@@ -192,8 +193,13 @@ def run_syllabus_crew(
 
     Parameters
     ----------
+    course_context : str
+        Rich course context string (from the Intake Specialist) containing
+        tech stack, kerntaken emphasis, student profile, and pedagogical
+        notes.  This is the primary input for syllabus generation.
     course_name : str
-        The course title / topic to generate content for.
+        Short course name / title used for file naming and directory
+        scaffolding.  When empty, extracted from *course_context*.
     verbose : bool
         Enable detailed agent and task logging.
     architect_agent : Agent or None
@@ -215,6 +221,14 @@ def run_syllabus_crew(
     CrewResult
         Container with paths, status flags, and any error messages.
     """
+    # Extract course_name from context if not explicitly provided.
+    if not course_name:
+        # Use the first line or first 80 chars as a fallback name.
+        first_line = course_context.strip().split("\n")[0]
+        course_name = first_line.replace("Course Name:", "").strip()
+        if not course_name or len(course_name) > 100:
+            course_name = course_context.strip()[:80]
+
     safe_name = _sanitize_filename(course_name)
 
     # ── 0. Handle resume mode ──────────────────────────────────────────
@@ -279,7 +293,9 @@ def run_syllabus_crew(
             architect = architect_agent
 
         syllabus_task = create_syllabus_generation_task(
-            agent=architect, course_name=course_name
+            agent=architect,
+            course_name=course_name,
+            course_context=course_context,
         )
 
         try:

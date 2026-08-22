@@ -142,6 +142,7 @@ def create_syllabus_generation_task(
     *,
     course_name: str,
     agent: Agent,
+    course_context: Optional[str] = None,
     course_description: Optional[str] = None,
     course_duration: Optional[str] = None,
     target_audience: Optional[str] = None,
@@ -155,6 +156,11 @@ def create_syllabus_generation_task(
         The name of the vocational course (e.g. "Full-Stack Web Development").
     agent : Agent
         The Curriculum Architect agent that will execute this task.
+    course_context : str or None
+        Rich course context string from the Intake Specialist containing
+        tech stack, kerntaken emphasis, student profile, and pedagogical
+        notes.  When provided, this is injected as the primary grounding
+        context for the syllabus design.
     course_description : str or None
         Optional one-paragraph description of the course's scope and focus.
         When omitted the agent infers this from the course name.
@@ -176,6 +182,12 @@ def create_syllabus_generation_task(
         f"following course:\n\n"
         f"**Course Name:** {course_name}\n",
     ]
+
+    if course_context:
+        description_parts.append(
+            f"\n**Course Context (from Intake Specialist):**\n"
+            f"{course_context}\n"
+        )
 
     if course_description:
         description_parts.append(
