@@ -230,7 +230,7 @@ def main() -> None:
     print(f"\n{'=' * 60}")
     print(f"  🐝  Syllabus Swarm")
     print(f"  Course:     {course_name}")
-    print(f"  Model:      DeepSeek R1 via OpenRouter")
+    print(f"  Model:      Per-agent via OpenRouter (see .env.example)")
     print(f"  Labs:       {'Skip' if skip_labs else 'Generate'}")
     print(f"{'=' * 60}\n")
 
