@@ -251,13 +251,8 @@ def create_lab_generation_task(
     ]
 
     if syllabus_context:
-        # Truncate extremely long syllabi to avoid blowing out the prompt
-        # budget while still giving the agent enough signal.
-        truncated = syllabus_context[:8000] + (
-            "… [truncated]" if len(syllabus_context) > 8000 else ""
-        )
         description_parts.append(
-            f"\n**Syllabus Context (excerpt):**\n\n{truncated}\n"
+            f"\n**Syllabus Context:**\n\n{syllabus_context}\n"
         )
 
     if topic_focus:
