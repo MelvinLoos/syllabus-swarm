@@ -56,12 +56,14 @@ OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
 CURRICULUM_ARCHITECT: str = "CURRICULUM_ARCHITECT"
 LAB_DEVELOPER: str = "LAB_DEVELOPER"
 OUTPUT_EXPORTER: str = "OUTPUT_EXPORTER"
+INTAKE_SPECIALIST: str = "INTAKE_SPECIALIST"
 
 # All known agent roles (used by list_agent_configs).
 _KNOWN_ROLES: tuple[str, ...] = (
     CURRICULUM_ARCHITECT,
     LAB_DEVELOPER,
     OUTPUT_EXPORTER,
+    INTAKE_SPECIALIST,
 )
 
 # ---------------------------------------------------------------------------
