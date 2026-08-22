@@ -308,6 +308,28 @@ class TestCreateLabDeveloper:
             agent = create_lab_developer()
             assert "polyglot" in agent.backstory.lower()
 
+    def test_has_output_export_tool(self, mock_llm: MagicMock) -> None:
+        """The agent is equipped with the OutputExportTool for file writing."""
+        with patch(
+            "src.agents.lab_developer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_lab_developer()
+            tool_names = [t.name for t in agent.tools]
+            assert "output_export_tool" in tool_names
+
+    def test_output_export_tool_has_force_enabled(self, mock_llm: MagicMock) -> None:
+        """The OutputExportTool is instantiated with force=True for overwrites."""
+        with patch(
+            "src.agents.lab_developer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_lab_developer()
+            export_tool = next(
+                t for t in agent.tools if t.name == "output_export_tool"
+            )
+            assert export_tool.force is True
+
 
 # ===================================================================
 # Module singletons

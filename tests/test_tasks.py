@@ -328,3 +328,123 @@ class TestCreateLabGenerationTask:
         kwargs = self._call_factory(course_name="Test Course")
         assert "README.md" in kwargs["expected_output"]
         assert "top-level index" in kwargs["expected_output"]
+
+    # -- Language-specific tooling ----------------------------------------
+
+    def test_language_config_javascript(self) -> None:
+        """JavaScript labs use .js, eslint, and package.json."""
+        kwargs = self._call_factory(course_name="Test Course", language="JavaScript")
+        desc = kwargs["description"]
+        assert ".js" in desc
+        assert "eslint" in desc
+        assert "package.json" in desc
+        assert ".py" not in desc
+        assert "ruff check" not in desc
+
+    def test_language_config_typescript(self) -> None:
+        """TypeScript labs use .ts, eslint, package.json."""
+        kwargs = self._call_factory(course_name="Test Course", language="TypeScript")
+        desc = kwargs["description"]
+        assert ".ts" in desc
+        assert "eslint" in desc
+        assert "package.json" in desc
+
+    def test_language_config_go(self) -> None:
+        """Go labs use .go, golangci-lint, go.mod."""
+        kwargs = self._call_factory(course_name="Test Course", language="Go")
+        desc = kwargs["description"]
+        assert ".go" in desc
+        assert "golangci-lint" in desc
+        assert "go.mod" in desc
+
+    def test_language_specific_extension_in_expected_output(self) -> None:
+        """expected_output references the correct file extension."""
+        kwargs = self._call_factory(course_name="Test Course", language="JavaScript")
+        assert ".js" in kwargs["expected_output"]
+        assert "eslint" in kwargs["expected_output"]
+
+    # -- Tool usage mandate -----------------------------------------------
+
+    def test_tool_usage_mandate_in_description(self) -> None:
+        """The description mandates use of output_export_tool."""
+        kwargs = self._call_factory(course_name="Test Course")
+        assert "output_export_tool" in kwargs["description"]
+        assert "write-labs" in kwargs["description"]
+
+    def test_tool_usage_mandate_in_expected_output(self) -> None:
+        """The expected_output mandates use of output_export_tool."""
+        kwargs = self._call_factory(course_name="Test Course")
+        assert "output_export_tool" in kwargs["expected_output"]
+        assert "write-labs" in kwargs["expected_output"]
+
+    def test_expected_output_mentions_step_by_step(self) -> None:
+        """The expected_output instructs step-by-step tool usage."""
+        kwargs = self._call_factory(course_name="Test Course")
+        eo = kwargs["expected_output"]
+        assert "step-by-step" in eo.lower()
+        assert "FINAL textual response" in eo
+
+
+# ===================================================================
+# _get_lang_config helper
+# ===================================================================
+
+
+class TestGetLangConfig:
+    """Tests for the _get_lang_config helper in lab_generation."""
+
+    @staticmethod
+    def _call(language: str) -> dict:
+        from src.tasks.lab_generation import _get_lang_config
+        return _get_lang_config(language)
+
+    def test_known_language_python(self) -> None:
+        cfg = self._call("Python")
+        assert cfg["ext"] == ".py"
+        assert cfg["linter"] == "ruff check"
+
+    def test_known_language_javascript(self) -> None:
+        cfg = self._call("JavaScript")
+        assert cfg["ext"] == ".js"
+        assert cfg["linter"] == "eslint"
+
+    def test_known_language_typescript(self) -> None:
+        cfg = self._call("TypeScript")
+        assert cfg["ext"] == ".ts"
+
+    def test_known_language_java(self) -> None:
+        cfg = self._call("Java")
+        assert cfg["ext"] == ".java"
+
+    def test_known_language_go(self) -> None:
+        cfg = self._call("Go")
+        assert cfg["ext"] == ".go"
+
+    def test_known_language_rust(self) -> None:
+        cfg = self._call("Rust")
+        assert cfg["ext"] == ".rs"
+
+    def test_known_language_csharp(self) -> None:
+        cfg = self._call("C#")
+        assert cfg["ext"] == ".cs"
+
+    def test_known_language_php(self) -> None:
+        cfg = self._call("PHP")
+        assert cfg["ext"] == ".php"
+
+    def test_case_insensitive_match(self) -> None:
+        cfg = self._call("javascript")
+        assert cfg["ext"] == ".js"
+
+    def test_unknown_falls_back_to_python(self) -> None:
+        cfg = self._call("Brainfuck")
+        assert cfg["ext"] == ".py"
+        assert cfg["linter"] == "ruff check"
+
+    def test_empty_string_falls_back_to_python(self) -> None:
+        cfg = self._call("")
+        assert cfg["ext"] == ".py"
+
+    def test_whitespace_string_falls_back_to_python(self) -> None:
+        cfg = self._call("   ")
+        assert cfg["ext"] == ".py"
