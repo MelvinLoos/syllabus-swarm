@@ -26,6 +26,13 @@ from src.agents.curriculum_architect import get_architect
 from src.agents.lab_developer import get_lab_developer
 from src.tasks.syllabus_generation import create_syllabus_task
 from src.tasks.lab_generation import create_lab_task
+from src.exporters import (
+    write_syllabus,
+    write_file,
+    write_lab_file,
+    write_directory_tree,
+    update_output_manifest,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -103,6 +110,7 @@ class CrewResult:
         labs_ok: bool = True,
         syllabus_error: str | None = None,
         labs_error: str | None = None,
+        manifest_path: Optional[Path] = None,
     ) -> None:
         self.syllabus_path = syllabus_path
         self.labs_base_path = labs_base_path
@@ -110,6 +118,7 @@ class CrewResult:
         self.labs_ok = labs_ok
         self.syllabus_error = syllabus_error
         self.labs_error = labs_error
+        self.manifest_path = manifest_path
 
     @property
     def all_succeeded(self) -> bool:
@@ -187,15 +196,16 @@ def run_syllabus_crew(
                 "Check your API key, model availability, and network."
             )
 
-        syllabus_path.write_text(syllabus_raw, encoding="utf-8")
+        syllabus_path = write_syllabus(course_name, syllabus_raw, force=True)
         syllabus_ok = True
 
     except Exception as exc:
         syllabus_error = str(exc)
-        syllabus_path.write_text(
+        write_syllabus(
+            course_name,
             f"# {course_name} — Syllabus Generation Failed\n\n"
             f"**Error:** {syllabus_error}\n",
-            encoding="utf-8",
+            force=True,
         )
 
     # ── 2. Lab & Project Developer ─────────────────────────────────────
@@ -239,7 +249,7 @@ def run_syllabus_crew(
                     labs_error = "Lab Developer produced no output."
                 else:
                     lab_readme = labs_base_path / "README.md"
-                    lab_readme.write_text(lab_raw, encoding="utf-8")
+                    write_file(lab_readme, lab_raw, force=True)
                     labs_ok = True
 
             except Exception as exc:
@@ -251,13 +261,24 @@ def run_syllabus_crew(
             )
 
         if labs_error and not (labs_base_path / "README.md").exists():
-            (labs_base_path / "README.md").write_text(
+            write_file(
+                labs_base_path / "README.md",
                 f"# {course_name} — Lab Generation Failed\n\n"
                 f"**Error:** {labs_error}\n",
-                encoding="utf-8",
+                force=True,
             )
 
-    # ── 3. Return combined result ──────────────────────────────────────
+    # ── 3. Generate output manifest ────────────────────────────────────
+    try:
+        manifest_path = update_output_manifest(
+            course_name,
+            syllabus_path=syllabus_path,
+            labs_base_path=labs_base_path,
+        )
+    except Exception:
+        manifest_path = None  # manifest failure is non-fatal
+
+    # ── 4. Return combined result ──────────────────────────────────────
     return CrewResult(
         syllabus_path=syllabus_path,
         labs_base_path=labs_base_path,
@@ -265,4 +286,5 @@ def run_syllabus_crew(
         labs_ok=labs_ok,
         syllabus_error=syllabus_error,
         labs_error=labs_error,
+        manifest_path=manifest_path,
     )

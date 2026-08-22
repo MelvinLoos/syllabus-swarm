@@ -118,6 +118,16 @@ def _print_summary(result: CrewResult, course_name: str) -> None:
         if result.labs_error:
             print(f"      ↳ {result.labs_error}")
 
+    # ── Manifest ────────────────────────────
+    print()
+    if result.manifest_path and result.manifest_path.exists():
+        print(f"  📋  Output Manifest: {result.manifest_path}")
+    else:
+        print(f"  ⚠️   Output Manifest not generated.")
+
+    # ── Export summary ──────────────────────
+    _print_export_summary(result)
+
     # ── Overall verdict ─────────────────────
     print()
     if result.all_succeeded:
@@ -146,6 +156,59 @@ def _print_lab_tree(base: Path, indent: int = 6) -> None:
             _print_lab_tree(entry, indent + 3)
         else:
             print(f"{prefix}  {entry.name}")
+
+
+def _print_export_summary(result: CrewResult) -> None:
+    """Print a summary of what was exported and where."""
+    print()
+    print(f"  ── What Was Exported ──")
+
+    # Syllabus
+    if result.syllabus_path.exists():
+        try:
+            sz = result.syllabus_path.stat().st_size
+            print(f"  📄  Syllabus → {_fmt_size(sz):>10}  {result.syllabus_path}")
+        except OSError:
+            print(f"  📄  Syllabus →              {result.syllabus_path}")
+
+    # Labs
+    if result.labs_base_path.exists():
+        file_count = 0
+        total_size = 0
+        for f in result.labs_base_path.rglob("*"):
+            if f.is_file() and not f.name.startswith("."):
+                file_count += 1
+                try:
+                    total_size += f.stat().st_size
+                except OSError:
+                    pass
+        print(
+            f"  🧪  Labs     → {_fmt_size(total_size):>10}  "
+            f"{result.labs_base_path}/  ({file_count} files)"
+        )
+
+    # Manifest
+    if result.manifest_path and result.manifest_path.exists():
+        try:
+            sz = result.manifest_path.stat().st_size
+            print(f"  📋  Manifest → {_fmt_size(sz):>10}  {result.manifest_path}")
+        except OSError:
+            print(f"  📋  Manifest →              {result.manifest_path}")
+
+
+def _fmt_size(num_bytes: int) -> str:
+    """Format bytes as human-readable string."""
+    if num_bytes == 0:
+        return "0 B"
+    units = ["B", "KB", "MB", "GB"]
+    size = float(num_bytes)
+    idx = 0
+    while size >= 1024 and idx < len(units) - 1:
+        size /= 1024
+        idx += 1
+    if idx == 0:
+        return f"{int(size)} B"
+    return f"{size:.1f} {units[idx]}"
 
 
 # ---------------------------------------------------------------------------
