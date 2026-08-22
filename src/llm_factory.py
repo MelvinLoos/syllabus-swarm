@@ -1,0 +1,342 @@
+"""
+llm_factory.py — Shared LLM Builder with Per-Agent Configuration
+================================================================
+
+Issue #5: Per-Agent Model Configuration — Specialized LLMs for Each Agent
+
+Provides a single, canonical source of truth for building ``ChatOpenAI``
+instances wired to **OpenRouter**.  Every agent in the swarm should obtain
+its LLM through :func:`build_llm_for_agent` rather than reading environment
+variables directly.
+
+Key features
+------------
+* Agent role constants to eliminate magic strings across the codebase.
+* 4-tier fallback chain for every property (MODEL, TEMPERATURE, TOP_P,
+  MAX_TOKENS):
+  1. Per-agent override  → ``AGENT_{ROLE}_{PROPERTY}``
+  2. Agent-wide default   → ``AGENT_DEFAULT_{PROPERTY}``
+  3. Legacy globals       → ``OPENROUTER_MODEL`` / ``AGENT_TEMPERATURE`` /
+     ``AGENT_MAX_TOKENS`` (deprecated — kept for backward compatibility)
+  4. Hardcoded sensible defaults
+* Always targets ``https://openrouter.ai/api/v1`` as the base URL.
+* :func:`list_agent_configs` prints the effective configuration of every
+  known agent for diagnostics and debugging.
+
+Usage
+-----
+    from src.llm_factory import build_llm_for_agent, CURRICULUM_ARCHITECT
+
+    llm = build_llm_for_agent(CURRICULUM_ARCHITECT)
+    agent = Agent(role="...", goal="...", llm=llm, ...)
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Optional
+
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+
+# ---------------------------------------------------------------------------
+# Bootstrap environment — load .env so os.getenv picks up values.
+# Safe to call multiple times; dotenv ignores already-loaded files.
+# ---------------------------------------------------------------------------
+load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Constants — OpenRouter
+# ---------------------------------------------------------------------------
+OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+
+# ---------------------------------------------------------------------------
+# Agent role constants
+# ---------------------------------------------------------------------------
+CURRICULUM_ARCHITECT: str = "CURRICULUM_ARCHITECT"
+LAB_DEVELOPER: str = "LAB_DEVELOPER"
+OUTPUT_EXPORTER: str = "OUTPUT_EXPORTER"
+
+# All known agent roles (used by list_agent_configs).
+_KNOWN_ROLES: tuple[str, ...] = (
+    CURRICULUM_ARCHITECT,
+    LAB_DEVELOPER,
+    OUTPUT_EXPORTER,
+)
+
+# ---------------------------------------------------------------------------
+# Property names used in environment variable construction.
+# ---------------------------------------------------------------------------
+_PROPERTIES: tuple[str, ...] = ("MODEL", "TEMPERATURE", "TOP_P", "MAX_TOKENS")
+
+# ---------------------------------------------------------------------------
+# Hardcoded defaults — the final fallback when nothing is configured.
+# These match the values that were previously hardcoded in each agent module.
+# ---------------------------------------------------------------------------
+_DEFAULT_MODEL: str = "deepseek/deepseek-r1"
+_DEFAULT_TEMPERATURE: float = 0.2
+_DEFAULT_TOP_P: float = 0.1
+_DEFAULT_MAX_TOKENS: int = 8192
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_property(
+    role: str,
+    property_name: str,
+    *,
+    legacy_key: str,
+    hardcoded_default: str,
+) -> str:
+    """Resolve a single string property through the 4-tier fallback chain.
+
+    Tier order (highest to lowest priority):
+      1. ``AGENT_{role}_{property_name}``  — per-agent override
+      2. ``AGENT_DEFAULT_{property_name}`` — agent-wide default
+      3. *legacy_key*                       — deprecated global env var
+      4. *hardcoded_default*               — baked-in fallback
+    """
+    # Tier 1: per-agent override
+    value = os.getenv(f"AGENT_{role}_{property_name}")
+    if value is not None:
+        return value
+
+    # Tier 2: agent-wide default
+    value = os.getenv(f"AGENT_DEFAULT_{property_name}")
+    if value is not None:
+        return value
+
+    # Tier 3: legacy global
+    if legacy_key:
+        value = os.getenv(legacy_key)
+        if value is not None:
+            return value
+
+    # Tier 4: hardcoded default
+    return hardcoded_default
+
+
+def _resolve_numeric(
+    role: str,
+    property_name: str,
+    *,
+    legacy_key: str,
+    hardcoded_default: float,
+) -> float:
+    """Resolve a numeric property through the 4-tier fallback chain.
+
+    Same semantics as _resolve_property but returns a float (or int,
+    inferred from hardcoded_default).
+    """
+    raw = _resolve_property(
+        role,
+        property_name,
+        legacy_key=legacy_key,
+        hardcoded_default=str(hardcoded_default),
+    )
+    try:
+        if isinstance(hardcoded_default, int):
+            return int(raw)
+        return float(raw)
+    except (ValueError, TypeError):
+        return hardcoded_default
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def build_llm_for_agent(
+    agent_role: str,
+    *,
+    api_key: Optional[str] = None,
+) -> ChatOpenAI:
+    """Build a ChatOpenAI instance configured for a specific agent.
+
+    All agents connect through **OpenRouter** (https://openrouter.ai/api/v1).
+    Model, temperature, top_p, and max_tokens are resolved through a 4-tier
+    fallback chain that allows per-agent customisation while always falling
+    back to a working configuration — even when no environment variables are
+    set.
+
+    Parameters
+    ----------
+    agent_role : str
+        Uppercase snake_case identifier for the agent (use the module-level
+        constants, e.g. ``CURRICULUM_ARCHITECT``).
+    api_key : str or None
+        OpenRouter API key.  When omitted the key is read from the
+        ``OPENROUTER_API_KEY`` environment variable.
+
+    Returns
+    -------
+    ChatOpenAI
+        A fully-configured ChatOpenAI instance wired to OpenRouter.
+
+    Raises
+    ------
+    ValueError
+        If *agent_role* is empty or not a string.
+    """
+    if not agent_role or not isinstance(agent_role, str):
+        raise ValueError(
+            f"agent_role must be a non-empty string, got {agent_role!r}"
+        )
+
+    # Resolve the API key — use explicit argument first, then env var.
+    resolved_api_key: str = (
+        api_key if api_key is not None
+        else os.getenv("OPENROUTER_API_KEY", "")
+    )
+
+    model: str = _resolve_property(
+        agent_role,
+        "MODEL",
+        legacy_key="OPENROUTER_MODEL",
+        hardcoded_default=_DEFAULT_MODEL,
+    )
+
+    temperature: float = _resolve_numeric(
+        agent_role,
+        "TEMPERATURE",
+        legacy_key="AGENT_TEMPERATURE",
+        hardcoded_default=_DEFAULT_TEMPERATURE,
+    )
+
+    top_p: float = _resolve_numeric(
+        agent_role,
+        "TOP_P",
+        legacy_key="AGENT_TOP_P",
+        hardcoded_default=_DEFAULT_TOP_P,
+    )
+
+    max_tokens: int = int(
+        _resolve_numeric(
+            agent_role,
+            "MAX_TOKENS",
+            legacy_key="AGENT_MAX_TOKENS",
+            hardcoded_default=_DEFAULT_MAX_TOKENS,
+        )
+    )
+
+    return ChatOpenAI(
+        model=model,
+        api_key=resolved_api_key,
+        base_url=OPENROUTER_BASE_URL,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+    )
+
+
+def get_effective_config(agent_role: str) -> dict[str, object]:
+    """Return the effective configuration dict for a single agent.
+
+    This is the programmatic counterpart to list_agent_configs — useful
+    when you need the resolved values in code rather than printed to stdout.
+    """
+    resolved_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
+    api_key_status: str = (
+        "set" if resolved_api_key else "missing — authentication will fail"
+    )
+
+    return {
+        "role": agent_role,
+        "model": _resolve_property(
+            agent_role, "MODEL",
+            legacy_key="OPENROUTER_MODEL",
+            hardcoded_default=_DEFAULT_MODEL,
+        ),
+        "temperature": _resolve_numeric(
+            agent_role, "TEMPERATURE",
+            legacy_key="AGENT_TEMPERATURE",
+            hardcoded_default=_DEFAULT_TEMPERATURE,
+        ),
+        "top_p": _resolve_numeric(
+            agent_role, "TOP_P",
+            legacy_key="AGENT_TOP_P",
+            hardcoded_default=_DEFAULT_TOP_P,
+        ),
+        "max_tokens": int(
+            _resolve_numeric(
+                agent_role, "MAX_TOKENS",
+                legacy_key="AGENT_MAX_TOKENS",
+                hardcoded_default=_DEFAULT_MAX_TOKENS,
+            )
+        ),
+        "base_url": OPENROUTER_BASE_URL,
+        "api_key_status": api_key_status,
+    }
+
+
+def list_agent_configs() -> None:
+    """Print the effective configuration of every known agent to stdout.
+
+    Useful for debugging environment-variable resolution and confirming
+    that per-agent overrides are being picked up correctly.
+    """
+    print()
+    print("=" * 60)
+    print("  LLM Factory — Agent Configuration Summary")
+    print("=" * 60)
+    print()
+
+    print(f"  OpenRouter Base URL:  {OPENROUTER_BASE_URL}")
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    status = "set" if api_key else "missing — authentication will fail"
+    print(f"  API Key:              {status}")
+    print()
+
+    print("-- Environment " + "-" * 42)
+    for prop in _PROPERTIES:
+        env_key = f"AGENT_DEFAULT_{prop}"
+        value = os.getenv(env_key)
+        label = value if value is not None else "(not set)"
+        print(f"  {env_key:.<40} {label}")
+
+    legacy_map = {
+        "OPENROUTER_MODEL": "MODEL",
+        "AGENT_TEMPERATURE": "TEMPERATURE",
+        "AGENT_MAX_TOKENS": "MAX_TOKENS",
+    }
+    for legacy_key, _prop in legacy_map.items():
+        value = os.getenv(legacy_key)
+        label = value if value is not None else "(not set)"
+        print(f"  (legacy) {legacy_key:.<32} {label}")
+    print()
+
+    for role in _KNOWN_ROLES:
+        config = get_effective_config(role)
+        padding = max(1, 45 - len(role))
+        print(f"-- Agent: {role} " + "-" * padding)
+        print(f"  model:        {config['model']}")
+        print(f"  temperature:  {config['temperature']}")
+        print(f"  top_p:        {config['top_p']}")
+        print(f"  max_tokens:   {config['max_tokens']}")
+
+    print()
+    print("=" * 60)
+    print()
+# ---------------------------------------------------------------------------
+# Self-test
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    print("llm_factory module loaded successfully.\n")
+
+    list_agent_configs()
+
+    try:
+        llm = build_llm_for_agent(CURRICULUM_ARCHITECT)
+        print(f"build_llm_for_agent({CURRICULUM_ARCHITECT}) succeeded.")
+        print(f"   model_name:      {llm.model_name}")
+        print(f"   temperature:     {llm.temperature}")
+        model_kwargs_filtered = {
+            k: v for k, v in llm.model_kwargs.items()
+            if k in ("top_p", "max_tokens")
+        }
+        print(f"   model_kwargs:    {model_kwargs_filtered}")
+        print(f"   openai_api_base: {llm.openai_api_base}")
+    except Exception as exc:
+        print(f"build_llm_for_agent() raised: {exc}")
