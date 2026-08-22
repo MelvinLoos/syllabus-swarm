@@ -1,101 +1,284 @@
 """
-syllabus_generation.py — Syllabus Generation Task
-==================================================
+syllabus_generation.py — Syllabus Generation Task (Humanics-Aligned)
+===================================================================
 
 Issue #2: Core Agent — The Curriculum Architect (Humanics Alignment)
 
-Defines the CrewAI Task that instructs the Curriculum Architect agent
-to produce a comprehensive, Humanics-aligned vocational syllabus in
-structured Markdown format.
+Defines a CrewAI **Task** that, when executed by the Curriculum Architect
+agent, produces a complete, structured vocational course syllabus in
+Markdown.  The task specification:
+
+  • Embeds all three **Humanics** literacies — Technological, Data, and
+    Human Literacy — as non-negotiable threads woven through every module.
+  • Mandates a dedicated **Experiential Learning** section covering
+    real-world co-ops, capstone projects, and/or industry partnerships.
+  • Enforces consistent Markdown headings and formatting so the output
+    can be consumed directly by an LMS or human instructor.
+  • Writes the final syllabus to ``output/syllabus/<course_name>.md``.
 """
 
 from __future__ import annotations
 
+from typing import Optional
+
 from crewai import Agent, Task
+
+# ---------------------------------------------------------------------------
+# Markdown heading & formatting requirement (injected into both description
+# and expected_output to keep the agent deterministic).
+# ---------------------------------------------------------------------------
+_MARKDOWN_STRUCTURE_REQUIREMENT: str = (
+    "## Markdown Formatting Requirements\n\n"
+    "Your entire output MUST be valid Markdown with the following structure:\n\n"
+    "```\n"
+    "# {Course Name} — Course Syllabus\n\n"
+    "## 1. Course Overview\n"
+    "   - Course description, target audience, prerequisites, duration,\n"
+    "     and learning philosophy grounded in the Humanics framework.\n\n"
+    "## 2. Learning Objectives\n"
+    "   - Categorised under **Technological Literacy**, **Data Literacy**,\n"
+    "     and **Human Literacy** sub-headings (H3).\n\n"
+    "## 3. Humanics Literacies Integration\n"
+    "   ### 3.1 Technological Literacy\n"
+    "   ### 3.2 Data Literacy\n"
+    "   ### 3.3 Human Literacy\n"
+    "   - For each literacy: concrete skills, tools, and competencies\n"
+    "     learners will develop.  Use bullet lists and inline examples.\n\n"
+    "## 4. Module Breakdown\n"
+    "   - One H2 per module.  Each module H2 contains:\n"
+    "     * Duration (hours / weeks)\n"
+    "     * Learning goals (numbered list)\n"
+    "     * Key topics (bullet list)\n"
+    "     * Hands-on lab / exercise description\n"
+    "     * Humanics tags: `[T]` Technological, `[D]` Data, `[H]` Human\n\n"
+    "## 5. Experiential Learning & Industry Integration\n"
+    "   ### 5.1 Co-operative Education\n"
+    "   ### 5.2 Capstone Project\n"
+    "   ### 5.3 Industry Partnerships\n"
+    "   - Detailed descriptions, timelines, deliverables, and evaluation\n"
+    "     criteria for each experiential component.\n\n"
+    "## 6. Assessment Strategy\n"
+    "   - Weighting breakdown, rubric philosophy, formative vs. summative\n"
+    "     assessments, and re-assessment policies.\n\n"
+    "## 7. Required Tools & Resources\n"
+    "   - Software, hardware, textbooks, online platforms, and APIs.\n\n"
+    "## 8. Schedule-at-a-Glance\n"
+    "   - Week-by-week table mapping modules, assessments, and milestones.\n\n"
+    "## 9. Instructor Notes\n"
+    "   - Facilitation tips, common learner pitfalls, differentiation\n"
+    "     strategies, and accommodations.\n"
+    "```\n\n"
+    "**Rules:**\n"
+    "- Use ATX-style headings only (`#`, `##`, `###`, `####`).\n"
+    "- Use `-` for unordered lists and `1.` for ordered lists.\n"
+    "- Enclose inline code, file paths, and terminal commands in backticks.\n"
+    "- Use fenced code blocks with a language tag for multi-line snippets.\n"
+    "- Separate sections with blank lines for readability.\n"
+    "- **Never** use horizontal rules (`---`) inside the document body.\n"
+    "- Tag every module with at least one Humanics label per literacy:\n"
+    "  `[T]`, `[D]`, `[H]`.\n"
+)
+# ---------------------------------------------------------------------------
+# Humanics embedding mandate — injected verbatim into the description.
+# ---------------------------------------------------------------------------
+_HUMANICS_EMBEDDING_MANDATE: str = (
+    "## 🔴 MANDATORY — Humanics Literacies Embedding\n\n"
+    "You are grounded in **Joseph Aoun's Humanics framework**.  Every "
+    "module, every lab, and every assessment must visibly integrate "
+    "**three inseparable literacies**:\n\n"
+    "- **Technological Literacy [T]** — Hands-on coding, systems thinking, "
+    "tooling fluency (git, CI/CD, containers), computational problem-solving, "
+    "and exposure to modern development environments.\n"
+    "- **Data Literacy [D]** — Data collection, cleaning, analysis, "
+    "visualisation, quantitative reasoning, and evidence-based "
+    "decision-making that complements the technical stack.\n"
+    "- **Human Literacy [H]** — Professional ethics, responsible AI usage, "
+    "cross-cultural communication, team collaboration, accessibility, "
+    "and the societal impact of technology.\n\n"
+    "These are **not** separate modules — they are threads that must run "
+    "through every topic, lab, and assessment.  Tag each module component "
+    "with `[T]`, `[D]`, or `[H]` so instructors can verify coverage at a "
+    "glance.\n"
+)
+
+# ---------------------------------------------------------------------------
+# Experiential learning mandate — injected verbatim into the description.
+# ---------------------------------------------------------------------------
+_EXPERIENTIAL_LEARNING_MANDATE: str = (
+    "## 🔴 MANDATORY — Experiential Learning & Industry Integration\n\n"
+    "Every syllabus you produce MUST include a dedicated **Experiential "
+    "Learning & Industry Integration** section (H2 heading).  This section "
+    "must contain at least three sub-sections:\n\n"
+    "1. **Co-operative Education (H3)** — Describe a structured co-op or "
+    "work-integrated-learning placement.  Specify the minimum hours, "
+    "expected workplace competencies, employer evaluation criteria, and "
+    "reflection artefacts (e.g. a learning journal, a portfolio entry, or "
+    "a supervisor sign-off form).  Tie co-op objectives back to all three "
+    "Humanics literacies.\n\n"
+    "2. **Capstone Project (H3)** — Define a culminating project that "
+    "integrates skills from the entire course.  Include: the project "
+    "brief, team formation guidelines (if group-based), milestone "
+    "schedule, deliverable list (code repo, presentation, written report), "
+    "and a grading rubric.  The capstone must require learners to exercise "
+    "**Technological** (build/deploy), **Data** (measure/analyse), and "
+    "**Human** (present/collaborate/reflect-on-ethics) skills.\n\n"
+    "3. **Industry Partnerships (H3)** — Outline how industry partners "
+    "are engaged in the course: guest lectures, mentorship, live project "
+    "briefs, mock interviews, site visits, or hiring-pipeline arrangements.  "
+    "Include at least one concrete example of a partner-led activity.\n\n"
+    "If the course level or subject makes a traditional co-op infeasible, "
+    "replace it with a **simulated industry sprint** — a multi-day, "
+    "time-boxed exercise that mirrors a real workplace scenario — and "
+    "justify the substitution inline.  **Omitting this section entirely is "
+    "not acceptable under any circumstances.**\n"
+)
 
 # ---------------------------------------------------------------------------
 # Task factory
 # ---------------------------------------------------------------------------
 
 
-def create_syllabus_task(
-    agent: Agent,
+def create_syllabus_generation_task(
+    *,
     course_name: str,
+    agent: Agent,
+    course_description: Optional[str] = None,
+    course_duration: Optional[str] = None,
+    target_audience: Optional[str] = None,
+    verbose: bool = False,
 ) -> Task:
-    """Create a syllabus-generation Task bound to the given agent.
+    """Create a CrewAI Task that generates a Humanics-aligned syllabus.
 
     Parameters
     ----------
-    agent : Agent
-        A pre-built Curriculum Architect agent (or any CrewAI Agent).
     course_name : str
-        The course title / topic for which to generate a syllabus.
+        The name of the vocational course (e.g. "Full-Stack Web Development").
+    agent : Agent
+        The Curriculum Architect agent that will execute this task.
+    course_description : str or None
+        Optional one-paragraph description of the course's scope and focus.
+        When omitted the agent infers this from the course name.
+    course_duration : str or None
+        Optional duration string (e.g. "12 weeks" or "6 months").
+    target_audience : str or None
+        Optional description of the target learner profile.
+    verbose : bool
+        Enable detailed task execution logging.
 
     Returns
     -------
     Task
-        A CrewAI Task configured for syllabus generation.
+        Fully-configured CrewAI Task ready to be assigned to a Crew.
     """
+    # ---- Build the description ------------------------------------------
+    description_parts: list[str] = [
+        f"Generate a detailed, vocational course syllabus for the "
+        f"following course:\n\n"
+        f"**Course Name:** {course_name}\n",
+    ]
+
+    if course_description:
+        description_parts.append(
+            f"\n**Course Description:** {course_description}\n"
+        )
+
+    if course_duration:
+        description_parts.append(
+            f"\n**Course Duration:** {course_duration}\n"
+        )
+
+    if target_audience:
+        description_parts.append(
+            f"\n**Target Audience:** {target_audience}\n"
+        )
+
+    description_parts.append(
+        "\n\nThe syllabus must be designed according to **backward design** "
+        "principles: start with the desired outcomes, then design "
+        "assessments, and finally plan the learning activities.  Ground "
+        "every decision in the conviction that vocational education must "
+        "prepare learners not just for their first job, but for a career "
+        "of continuous adaptation in an AI-augmented economy.\n\n"
+        "_HUMANICS_EMBEDDING_MANDATE_\n\n"
+        "_EXPERIENTIAL_LEARNING_MANDATE_\n\n"
+        "_MARKDOWN_STRUCTURE_REQUIREMENT_\n"
+    )
+
+    # Inject the full mandate text (not references).
     description = (
-        f'Generate a comprehensive vocational syllabus for the course: '
-        f'**"{course_name}"**.\n\n'
-        f'Your syllabus must be a complete, structured Markdown document '
-        f'that integrates Joseph Aoun\'s **Humanics** framework by weaving '
-        f'together three inseparable literacies throughout every module:\n\n'
-        f'1. **Technological Literacy** — Hands-on coding exercises, '
-        f'tooling labs (version control, CI/CD, containerisation), '
-        f'systems-design challenges, and exposure to modern development '
-        f'environments.  Learners must *build* and *debug*, not just read.\n\n'
-        f'2. **Data Literacy** — Modules that teach learners to collect, '
-        f'clean, analyse, and visualise data.  Emphasise evidence-based '
-        f'reasoning, interpretation of analytics, and data-informed '
-        f'decision-making that complements the technical stack.\n\n'
-        f'3. **Human Literacy** — Embedded reflections on professional '
-        f'ethics, responsible AI usage, cross-cultural communication, '
-        f'team collaboration practices, and the societal impact of '
-        f'technology.  Every lab should prompt learners to ask *why* '
-        f'and *for whom* they are building.\n\n'
-        f'**Required sections** (use H2 `##` headings for each):\n\n'
-        f'- **## Course Overview** — title, catalogue description, '
-        f'target audience, prerequisites, and 5–7 measurable learning '
-        f'objectives.\n\n'
-        f'- **## Technological Literacy Modules** — concrete coding labs, '
-        f'tooling workshops, and systems-design exercises.\n\n'
-        f'- **## Data Literacy Modules** — data collection, cleaning, '
-        f'analysis, visualisation, and quantitative reasoning exercises.\n\n'
-        f'- **## Human Literacy Modules** — ethics discussions, '
-        f'collaboration workshops, communication exercises, cultural '
-        f'awareness prompts, and societal-impact case studies.\n\n'
-        f'- **## Assessment Strategy** — formative and summative '
-        f'assessments, grading rubrics, and a capstone project description.\n\n'
-        f'- **## Weekly Schedule / Timeline** — a week-by-week or '
-        f'module-by-module breakdown with estimated contact hours, '
-        f'labs, and self-study time.\n\n'
-        f'- **## Resources & References** — recommended textbooks, '
-        f'tools, APIs, datasets, and further reading.\n\n'
-        f'**Formatting rules:**\n'
-        f'- Use proper Markdown throughout (headings, bullet lists, '
-        f'numbered lists, tables where appropriate, bold/italic for emphasis).\n'
-        f'- Each Humanics literacy MUST appear as a labelled thread '
-        f'in every module (e.g., `🏷️ Tech Literacy`, '
-        f'`🏷️ Data Literacy`, `🏷️ Human Literacy`).\n'
-        f'- Be concrete — name real tools, languages, frameworks, '
-        f'datasets, and APIs; avoid vague abstractions.\n'
-        f'- Be actionable — every module must include at least one '
-        f'hands-on exercise.\n'
-        f'- Target a 12-week vocational programme (~300 total hours).'
+        "".join(description_parts)
+        .replace("_HUMANICS_EMBEDDING_MANDATE_", _HUMANICS_EMBEDDING_MANDATE)
+        .replace(
+            "_EXPERIENTIAL_LEARNING_MANDATE_", _EXPERIENTIAL_LEARNING_MANDATE
+        )
+        .replace(
+            "_MARKDOWN_STRUCTURE_REQUIREMENT_", _MARKDOWN_STRUCTURE_REQUIREMENT
+        )
     )
 
+    # ---- Build the expected_output --------------------------------------
     expected_output = (
-        f'A complete, well-structured Markdown syllabus document for '
-        f'"{course_name}" suitable for direct import into an LMS or '
-        f'handout to instructors and learners.  The document must contain '
-        f'all six required sections, use consistent `##` H2 headings, '
-        f'and include Humanics literacy labels in every module.'
+        "A complete, self-contained Markdown document that **exactly** "
+        "follows the structure specified in the Markdown Formatting "
+        "Requirements above.  The output must:\n\n"
+        "1. Open with an H1 heading matching the course name.\n"
+        "2. Contain all nine required sections (Course Overview through "
+        "Instructor Notes) as H2 headings in the prescribed order.\n"
+        "3. Embed all three Humanics literacies — **Technological [T]**, "
+        "**Data [D]**, and **Human [H]** — as visible tags in every "
+        "module breakdown, with concrete skill descriptions under each "
+        "literacy sub-heading (Section 3).\n"
+        "4. Include the mandatory **Experiential Learning & Industry "
+        "Integration** section (Section 5) with all three sub-sections: "
+        "Co-operative Education (or a justified simulated industry sprint), "
+        "Capstone Project, and Industry Partnerships.\n"
+        "5. Use only ATX-style headings, `-` bullet lists, `1.` numbered "
+        "lists, backtick-quoted inline code, and fenced code blocks with "
+        "language tags.  No horizontal rules.\n"
+        "6. Produce a week-by-week schedule table (Section 8) with columns "
+        "for Week, Module, Topics, Assessments, and Humanics Tags.\n"
+        "7. Be comprehensive enough that an instructor could teach the "
+        "course with no additional materials.\n\n"
+        f"The first line of the output MUST be:\n\n"
+        f"`# {course_name} — Course Syllabus`\n"
     )
 
+    # ---- Compute the output file path -----------------------------------
+    safe_name: str = (
+        course_name.strip()
+        .replace(" ", "_")
+        .replace("/", "-")
+        .replace(":", "-")
+        .replace("&", "and")
+        .lower()
+    )
+    output_file: str = f"output/syllabus/{safe_name}.md"
+
+    # ---- Assemble and return the Task -----------------------------------
     return Task(
         description=description,
         expected_output=expected_output,
         agent=agent,
+        output_file=output_file,
+        async_execution=False,
     )
+# ---------------------------------------------------------------------------
+# Self-test
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    from src.agents.curriculum_architect import create_curriculum_architect
+
+    agent = create_curriculum_architect(verbose=True)
+    task = create_syllabus_generation_task(
+        course_name="Python for Data Engineering",
+        agent=agent,
+        course_duration="10 weeks",
+        target_audience="Career changers with basic programming experience",
+        verbose=True,
+    )
+    print("✅ Syllabus Generation Task created successfully.\n")
+    print(f"   Output file:  {task.output_file}")
+    print(f"   Agent role:   {agent.role.split(chr(10))[0]}")
+    print(f"   Async:        {task.async_execution}")
+    print(f"   Description length: {len(task.description)} chars")
+    print(f"   Expected output length: {len(task.expected_output)} chars")
