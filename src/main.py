@@ -4,20 +4,23 @@ main.py — Syllabus Swarm CLI Entry Point
 =========================================
 
 Issue #2: Core Agent — The Curriculum Architect (Humanics Alignment)
+Issue #3: Core Agent — The Lab & Project Developer (Tiered Coding Challenges)
 
-Orchestrates the full syllabus-generation pipeline:
+Orchestrates the full syllabus-and-labs generation pipeline:
   1. Accepts a course name/topic via CLI argument or interactive prompt.
-  2. Instantiates the Curriculum Architect agent (DeepSeek R1 via OpenRouter).
-  3. Creates the syllabus-generation task.
-  4. Assembles and runs a CrewAI Crew.
-  5. Saves the generated Markdown syllabus to output/syllabus/<course>.md.
-  6. Prints a success/failure summary with the output path.
+  2. Runs the **Curriculum Architect** agent to generate a Humanics-aligned
+     Markdown syllabus saved to ``output/syllabus/<course_name>.md``.
+  3. Runs the **Lab & Project Developer** agent using the syllabus as
+     context to generate tiered coding labs saved under
+     ``output/labs/<course_name>/``.
+  4. Prints a clear success/failure summary for both agents.
 
 Usage
 -----
   python src/main.py "Data Science with Python"
   python -m src.main "Full-Stack Web Development"
   python src/main.py             # interactive prompt
+  python src/main.py "ML Basics" --skip-labs  # syllabus only
 
 Environment
 -----------
@@ -43,7 +46,7 @@ from dotenv import load_dotenv
 # Load environment variables *before* any internal imports that read them.
 load_dotenv(dotenv_path=_PROJECT_ROOT / ".env", override=False)
 
-from src.crews.syllabus_crew import run_syllabus_crew
+from src.crews.syllabus_crew import CrewResult, run_syllabus_crew
 
 # ---------------------------------------------------------------------------
 # CLI helpers
@@ -53,10 +56,8 @@ from src.crews.syllabus_crew import run_syllabus_crew
 def _gather_course_name() -> str:
     """Return the course name from CLI args or interactive input."""
     if len(sys.argv) > 1:
-        # Join all arguments in case the user didn't quote multi-word names.
         return " ".join(sys.argv[1:]).strip()
 
-    # Interactive prompt
     try:
         return input("📘 Enter course name / topic: ").strip()
     except (EOFError, KeyboardInterrupt):
@@ -75,43 +76,116 @@ def _validate_name(name: str) -> str:
     return name
 
 
+def _should_skip_labs() -> bool:
+    """Check CLI arguments for --skip-labs flag."""
+    return "--skip-labs" in sys.argv
+
+
+# ---------------------------------------------------------------------------
+# Summary printer
+# ---------------------------------------------------------------------------
+
+
+def _print_summary(result: CrewResult, course_name: str) -> None:
+    """Print a clear success/failure summary for both agents."""
+    print(f"\n{'=' * 60}")
+    print(f"  🐝  Syllabus Swarm — Results Summary")
+    print(f"  Course: {course_name}")
+    print(f"{'=' * 60}")
+
+    # ── Syllabus Agent ──────────────────────
+    print()
+    if result.syllabus_ok:
+        print(f"  ✅  Curriculum Architect  —  SUCCESS")
+        print(f"      📄  Syllabus: {result.syllabus_path}")
+        try:
+            size = result.syllabus_path.stat().st_size
+            print(f"      📏  Size:     {size:,} bytes")
+        except OSError:
+            pass
+    else:
+        print(f"  ❌  Curriculum Architect  —  FAILED")
+        if result.syllabus_error:
+            print(f"      ↳ {result.syllabus_error}")
+
+    # ── Labs Agent ──────────────────────────
+    if result.labs_ok:
+        print(f"  ✅  Lab & Project Developer  —  SUCCESS")
+        print(f"      📁  Labs:  {result.labs_base_path}/")
+        _print_lab_tree(result.labs_base_path)
+    else:
+        print(f"  ❌  Lab & Project Developer  —  FAILED")
+        if result.labs_error:
+            print(f"      ↳ {result.labs_error}")
+
+    # ── Overall verdict ─────────────────────
+    print()
+    if result.all_succeeded:
+        print(f"  🎉  All agents completed successfully!")
+    elif result.syllabus_ok:
+        print(f"  ⚠️   Syllabus generated but labs failed.")
+    else:
+        print(f"  💥  Both agents failed.")
+        print(f"      Check OPENROUTER_API_KEY and network connectivity.")
+    print(f"{'=' * 60}\n")
+
+
+def _print_lab_tree(base: Path, indent: int = 6) -> None:
+    """Print a compact tree view of the lab directory structure."""
+    prefix = " " * indent
+    try:
+        entries = sorted(base.iterdir())
+    except OSError:
+        return
+
+    for entry in entries:
+        if entry.name.startswith("."):
+            continue
+        if entry.is_dir():
+            print(f"{prefix}▸ {entry.name}/")
+            _print_lab_tree(entry, indent + 3)
+        else:
+            print(f"{prefix}  {entry.name}")
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 
 def main() -> None:
-    """Entry point — orchestrate the syllabus generation pipeline."""
+    """Entry point — orchestrate the syllabus + labs generation pipeline."""
 
-    # --- 1. Gather input ---
+    # --- 1. Gather input -------------------------------------------------
+    skip_labs = _should_skip_labs()
+    while "--skip-labs" in sys.argv:
+        sys.argv.remove("--skip-labs")
+
     course_name = _gather_course_name()
     course_name = _validate_name(course_name)
 
     print(f"\n{'=' * 60}")
-    print(f"  🐝  Syllabus Swarm — Curriculum Architect")
-    print(f"  Course: {course_name}")
-    print(f"  Model:  DeepSeek R1 via OpenRouter")
+    print(f"  🐝  Syllabus Swarm")
+    print(f"  Course:     {course_name}")
+    print(f"  Model:      DeepSeek R1 via OpenRouter")
+    print(f"  Labs:       {'Skip' if skip_labs else 'Generate'}")
     print(f"{'=' * 60}\n")
 
-    # --- 2. Run the crew ---
+    # --- 2. Run the crew -------------------------------------------------
     try:
-        output_path = run_syllabus_crew(course_name, verbose=True)
+        result = run_syllabus_crew(
+            course_name, verbose=True, skip_labs=skip_labs
+        )
     except RuntimeError as exc:
-        print(f"\n❌  Runtime Error: {exc}", file=sys.stderr)
-        print("   → Check that OPENROUTER_API_KEY is set in your .env file.", file=sys.stderr)
-        print("   → Verify the model is available at https://openrouter.ai/models", file=sys.stderr)
+        print(f"\n❌  Fatal Runtime Error: {exc}", file=sys.stderr)
+        print("   → Check that OPENROUTER_API_KEY is set in .env.", file=sys.stderr)
         sys.exit(2)
     except Exception as exc:
-        print(f"\n❌  Unexpected Error: {exc}", file=sys.stderr)
-        print("   → This may be a networking, API, or dependency issue.", file=sys.stderr)
+        print(f"\n❌  Fatal Unexpected Error: {exc}", file=sys.stderr)
         sys.exit(3)
 
-    # --- 3. Print summary ---
-    print(f"\n{'=' * 60}")
-    print(f"  ✅  Syllabus generated successfully!")
-    print(f"  📄  Output: {output_path}")
-    print(f"  📏  Size:   {output_path.stat().st_size:,} bytes")
-    print(f"{'=' * 60}\n")
+    # --- 3. Print summary ------------------------------------------------
+    _print_summary(result, course_name)
 
 
 if __name__ == "__main__":
