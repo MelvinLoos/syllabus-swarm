@@ -7,7 +7,7 @@ Validates the v2 per-agent model assignments introduced in Issue #6:
   • deepseek/deepseek-v4-pro        → CURRICULUM_ARCHITECT
   • qwen/qwen3-coder                → LAB_DEVELOPER
   • deepseek/deepseek-v4-flash-latest → OUTPUT_EXPORTER
-  • deepseek/deepseek-r1            → HARDCODED FALLBACK
+  • deepseek/deepseek/deepseek-v4-pro            → HARDCODED FALLBACK
 
 The script runs two independent verification passes:
 
@@ -20,7 +20,7 @@ The script runs two independent verification passes:
     Calls :func:`src.llm_factory.build_llm_for_agent` for each agent role
     with the v2 environment variables set, confirming the resolved model
     string matches the expected new default.  Also validates the hardcoded
-    fallback (`deepseek/deepseek-r1`) kicks in when no per-agent vars exist.
+    fallback (`deepseek/deepseek/deepseek-v4-pro`) kicks in when no per-agent vars exist.
 
     This pass requires NO live API key — it exercises only the 4-tier
     resolution logic.
@@ -87,7 +87,7 @@ V2_ASSIGNMENTS: dict[str, dict[str, str]] = {
     },
 }
 
-HARDCODED_FALLBACK: str = _DEFAULT_MODEL  # "deepseek/deepseek-r1"
+HARDCODED_FALLBACK: str = _DEFAULT_MODEL  # "deepseek/deepseek/deepseek-v4-pro"
 
 DUMMY_API_KEY: str = "sk-or-v1-verify-models-smoke-test-key"
 
