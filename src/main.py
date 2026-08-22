@@ -50,9 +50,33 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=_PROJECT_ROOT / ".env", override=False)
 
 from crewai import Crew, Process, Task
+from pydantic import BaseModel, Field
 
 from src.agents.intake_specialist import get_intake_specialist
 from src.crews.syllabus_crew import CrewResult, run_syllabus_crew
+
+
+# ---------------------------------------------------------------------------
+# Pydantic structured-output model for the Intake Specialist
+# ---------------------------------------------------------------------------
+
+
+class CourseSpecification(BaseModel):
+    """Structured output from the Intake Specialist synthesis step.
+
+    This model ensures the LLM returns both the rich pedagogical context
+    AND the exact programming language, eliminating the need for brittle
+    regex-based language detection downstream.
+    """
+
+    course_context: str = Field(
+        description="The rich pedagogical context and requirements "
+        "synthesised from the user's answers."
+    )
+    primary_language: str = Field(
+        description="The exact programming language to be used for labs "
+        "(e.g., 'JavaScript', 'Python', 'TypeScript', 'Java', 'Go', 'Rust')."
+    )
 
 # ---------------------------------------------------------------------------
 # CLI helpers
@@ -115,7 +139,7 @@ def _clean_cli_flags() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _run_intake(course_name: str, *, verbose: bool = False) -> str:
+def _run_intake(course_name: str, *, verbose: bool = False) -> tuple[str, str]:
     """Run the Intake Specialist to gather rich course context.
 
     Steps:
@@ -123,7 +147,7 @@ def _run_intake(course_name: str, *, verbose: bool = False) -> str:
          2-3 targeted clarifying questions.
       2. Display the questions and capture the user's multi-line response.
       3. Send the course name + user answers back to the Intake Specialist
-         for synthesis into a ``course_context`` string.
+         for synthesis into a ``CourseSpecification`` structured output.
 
     Parameters
     ----------
@@ -134,9 +158,9 @@ def _run_intake(course_name: str, *, verbose: bool = False) -> str:
 
     Returns
     -------
-    str
-        A rich ``course_context`` string synthesised from the course name
-        and the user's answers.
+    tuple[str, str]
+        A ``(course_context, primary_language)`` pair extracted from the
+        Intake Specialist's structured output.
     """
     intake_agent = get_intake_specialist(verbose=verbose)
 
@@ -184,7 +208,7 @@ def _run_intake(course_name: str, *, verbose: bool = False) -> str:
     except Exception as exc:
         print(f"\n⚠️  Intake Specialist failed to generate questions: {exc}")
         print("   Proceeding with bare course name as context.\n")
-        return f"Course Name: {course_name}"
+        return f"Course Name: {course_name}", "Python"
 
     # ── Step 2: Display questions and capture answers ────────────────────
     print(f"{'─' * 60}")
@@ -211,7 +235,7 @@ def _run_intake(course_name: str, *, verbose: bool = False) -> str:
 
     if not user_answers:
         print("\n⚠️  No answers provided. Proceeding with bare course name.\n")
-        return f"Course Name: {course_name}"
+        return f"Course Name: {course_name}", "Python"
 
     # ── Step 3: Synthesise course context ────────────────────────────────
     synthesis_task = Task(
@@ -222,25 +246,32 @@ def _run_intake(course_name: str, *, verbose: bool = False) -> str:
             f"**Your Questions:**\n{questions}\n\n"
             f"**User's Answers:**\n{user_answers}\n\n"
             f"Your task: Synthesise the course name, your questions, and "
-            f"the user's answers into a single, rich ``course_context`` "
-            f"string.  This context will be passed directly to the "
-            f"Curriculum Architect agent who will design the syllabus.\n\n"
-            f"The course_context must include:\n"
-            f"- The course name and a one-sentence summary\n"
-            f"- Tech stack and tooling details\n"
-            f"- Kerntaken emphasis (which of P1-K1 through P4-K1 to focus on)\n"
-            f"- Student profile (BOL/BBL, year level, BPV readiness)\n"
-            f"- Any additional pedagogical notes or constraints mentioned\n\n"
-            f"Format the output as a clear, structured text block (NOT "
-            f"Markdown — just plain text with labelled sections).  Keep it "
-            f"concise but comprehensive — the Curriculum Architect needs "
-            f"enough detail to design a targeted syllabus."
+            f"the user's answers into a structured ``CourseSpecification`` "
+            f"object with two fields:\n\n"
+            f"1. ``course_context`` — A rich, structured text block "
+            f"(plain text, NOT Markdown) containing:\n"
+            f"   - The course name and a one-sentence summary\n"
+            f"   - Tech stack and tooling details\n"
+            f"   - Kerntaken emphasis (which of P1-K1 through P4-K1 to "
+            f"focus on)\n"
+            f"   - Student profile (BOL/BBL, year level, BPV readiness)\n"
+            f"   - Any additional pedagogical notes or constraints\n\n"
+            f"2. ``primary_language`` — The EXACT programming language "
+            f"that will be used for coding labs (e.g., 'JavaScript', "
+            f"'Python', 'TypeScript', 'Java', 'Go', 'Rust').  This MUST "
+            f"be a single language name, not a list or description.\n\n"
+            f"The course_context will be passed directly to the "
+            f"Curriculum Architect agent who will design the syllabus.  "
+            f"The primary_language will determine the file extensions, "
+            f"linters, and tooling used in the coding labs."
         ),
         expected_output=(
-            "A rich, structured course_context string (plain text, not "
-            "Markdown) containing: course name + summary, tech stack, "
-            "kerntaken emphasis, student profile, and any additional notes."
+            "A CourseSpecification object with two fields: "
+            "course_context (rich pedagogical context as plain text) and "
+            "primary_language (the exact programming language for labs, "
+            "e.g. 'JavaScript', 'Python')."
         ),
+        output_pydantic=CourseSpecification,
         agent=intake_agent,
         async_execution=False,
     )
@@ -255,28 +286,38 @@ def _run_intake(course_name: str, *, verbose: bool = False) -> str:
             verbose=verbose,
         )
         synthesis_result = synthesis_crew.kickoff()
-        course_context = (
-            synthesis_result.raw
-            if hasattr(synthesis_result, "raw")
-            else str(synthesis_result)
-        ).strip()
+
+        # Extract the typed Pydantic model from the result.
+        if hasattr(synthesis_result, "pydantic") and synthesis_result.pydantic is not None:
+            spec: CourseSpecification = synthesis_result.pydantic
+            course_context = spec.course_context.strip()
+            primary_language = spec.primary_language.strip()
+        else:
+            # Fallback: parse from raw text if pydantic output unavailable.
+            course_context = (
+                synthesis_result.raw
+                if hasattr(synthesis_result, "raw")
+                else str(synthesis_result)
+            ).strip()
+            primary_language = "Python"
 
         if not course_context:
             print("⚠️  Synthesis produced no output. Using bare course name.\n")
-            return f"Course Name: {course_name}"
+            return f"Course Name: {course_name}", "Python"
 
         print(f"{'─' * 60}")
         print("📋  Course Context (sent to Curriculum Architect):")
         print(f"{'─' * 60}")
         print(course_context)
+        print(f"   Primary Language: {primary_language}")
         print(f"{'─' * 60}\n")
 
-        return course_context
+        return course_context, primary_language
 
     except Exception as exc:
         print(f"\n⚠️  Synthesis failed: {exc}")
         print("   Proceeding with bare course name as context.\n")
-        return f"Course Name: {course_name}"
+        return f"Course Name: {course_name}", "Python"
 
 
 # ---------------------------------------------------------------------------
@@ -448,14 +489,16 @@ def main() -> None:
     if resume_dir:
         # When resuming, we already have a syllabus — no need for intake.
         course_context = f"Course Name: {course_name}"
+        primary_language = "Python"
         print("📋  Resume mode — skipping Intake Specialist.\n")
     else:
-        course_context = _run_intake(course_name, verbose=True)
+        course_context, primary_language = _run_intake(course_name, verbose=True)
 
     # --- 3. Run the crew -------------------------------------------------
     try:
         result = run_syllabus_crew(
             course_context,
+            primary_language=primary_language,
             verbose=True,
             skip_labs=skip_labs,
             resume_dir=resume_dir,

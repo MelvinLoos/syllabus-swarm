@@ -174,6 +174,7 @@ def run_syllabus_crew(
     course_context: str,
     *,
     course_name: str = "",
+    primary_language: str = "Python",
     verbose: bool = False,
     architect_agent: Optional[Agent] = None,
     lab_dev_agent: Optional[Agent] = None,
@@ -200,6 +201,10 @@ def run_syllabus_crew(
     course_name : str
         Short course name / title used for file naming and directory
         scaffolding.  When empty, extracted from *course_context*.
+    primary_language : str
+        The exact programming language for coding labs (e.g. 'JavaScript',
+        'Python').  Passed through to the Lab Developer task so file
+        extensions, linters, and tooling references match the language.
     verbose : bool
         Enable detailed agent and task logging.
     architect_agent : Agent or None
@@ -354,6 +359,7 @@ def run_syllabus_crew(
                 agent=lab_dev,
                 course_name=course_name,
                 syllabus_context=syllabus_raw,
+                language=primary_language,
                 verbose=verbose,
             )
 
