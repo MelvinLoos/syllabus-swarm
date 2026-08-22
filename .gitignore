@@ -1,0 +1,66 @@
+# ============================================================
+# syllabus-swarm — .gitignore
+# ============================================================
+
+# --- Python virtual environments ---
+.venv/
+venv/
+env/
+.env
+*.env.local
+*.env.production
+
+# --- Python bytecode & cache ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+*.whl
+
+# --- pip / poetry / uv ---
+pip-log.txt
+pip-delete-this-directory.txt
+poetry.lock
+uv.lock
+
+# --- IDE & editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# --- OS artifacts ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Testing & coverage ---
+htmlcov/
+.coverage
+.coverage.*
+.tox/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Logs ---
+*.log
+
+# --- Docker / compose overrides ---
+docker-compose.override.yml
+
+# --- Jupyter notebooks ---
+.ipynb_checkpoints/
+
+# --- Repomix / AI tooling outputs ---
+*.repomix.*
