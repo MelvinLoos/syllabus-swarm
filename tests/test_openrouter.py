@@ -30,10 +30,7 @@ from unittest.mock import MagicMock, patch
 
 OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
 _DEFAULT_MODEL: str = "deepseek/deepseek-v4-pro"
-_TEST_PROMPT: str = (
-    "In 2-3 sentences, explain what OpenRouter is and why a developer "
-    "might use it."
-)
+_TEST_PROMPT: str = "In 2-3 sentences, explain what OpenRouter is and why a developer might use it."
 
 
 # ---------------------------------------------------------------------------
@@ -85,9 +82,7 @@ class TestEnvironmentResolution:
 
     def test_api_key_present_detected(self) -> None:
         """A set API key is correctly identified."""
-        with patch.dict(
-            os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}, clear=True
-        ):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}, clear=True):
             api_key = os.getenv("OPENROUTER_API_KEY", "")
             assert api_key == "sk-or-v1-test"
 
@@ -237,7 +232,12 @@ class TestErrorHandling:
         exc_name = "SomeUnknownError"
         is_known = any(
             keyword in exc_name
-            for keyword in ("AuthenticationError", "APIConnectionError",
-                            "ConnectionError", "RateLimitError", "429")
+            for keyword in (
+                "AuthenticationError",
+                "APIConnectionError",
+                "ConnectionError",
+                "RateLimitError",
+                "429",
+            )
         )
         assert not is_known  # Falls through to generic handler

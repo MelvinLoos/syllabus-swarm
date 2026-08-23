@@ -28,9 +28,7 @@ class TestCreateSyllabusGenerationTask:
     @pytest.fixture(autouse=True)
     def _patch_task(self) -> None:
         """Patch Task in the syllabus_generation module."""
-        with patch(
-            "src.tasks.syllabus_generation.Task"
-        ) as self.mock_task:
+        with patch("src.tasks.syllabus_generation.Task") as self.mock_task:
             yield
 
     def _call_factory(self, **overrides) -> dict:
@@ -53,10 +51,7 @@ class TestCreateSyllabusGenerationTask:
     def test_course_name_in_expected_output(self) -> None:
         """The expected_output mandates an H1 with the course name."""
         kwargs = self._call_factory()
-        assert (
-            "# Python for Data Engineering — Course Syllabus"
-            in kwargs["expected_output"]
-        )
+        assert "# Python for Data Engineering — Course Syllabus" in kwargs["expected_output"]
 
     def test_output_file_follows_expected_pattern(self) -> None:
         """The output_file is output/syllabus/<safe_name>.md."""
@@ -91,9 +86,7 @@ class TestCreateSyllabusGenerationTask:
             course_name="Test Course",
             course_description="A comprehensive course on data engineering.",
         )
-        assert (
-            "A comprehensive course on data engineering." in kwargs["description"]
-        )
+        assert "A comprehensive course on data engineering." in kwargs["description"]
         assert "Course Description:" in kwargs["description"]
 
     def test_course_duration_injected_when_provided(self) -> None:
@@ -111,10 +104,7 @@ class TestCreateSyllabusGenerationTask:
             course_name="Test Course",
             target_audience="Career changers with basic programming experience",
         )
-        assert (
-            "Career changers with basic programming experience"
-            in kwargs["description"]
-        )
+        assert "Career changers with basic programming experience" in kwargs["description"]
         assert "Target Audience:" in kwargs["description"]
 
     def test_optional_fields_omitted_when_none(self) -> None:
@@ -186,9 +176,7 @@ class TestCreateLabGenerationTask:
     @pytest.fixture(autouse=True)
     def _patch_task(self) -> None:
         """Patch Task in the lab_generation module."""
-        with patch(
-            "src.tasks.lab_generation.Task"
-        ) as self.mock_task:
+        with patch("src.tasks.lab_generation.Task") as self.mock_task:
             yield
 
     def _call_factory(self, **overrides) -> dict:
@@ -222,10 +210,7 @@ class TestCreateLabGenerationTask:
     def test_output_file_follows_expected_pattern(self) -> None:
         """The output_file is output/labs/README.md."""
         kwargs = self._call_factory()
-        assert (
-            kwargs["output_file"]
-            == "output/labs/README.md"
-        )
+        assert kwargs["output_file"] == "output/labs/README.md"
 
     def test_async_execution_is_false(self) -> None:
         """Tasks are synchronous by default."""
@@ -377,6 +362,7 @@ class TestGetLangConfig:
     @staticmethod
     def _call(language: str) -> dict:
         from src.tasks.lab_generation import _get_lang_config
+
         return _get_lang_config(language)
 
     def test_known_language_python(self) -> None:

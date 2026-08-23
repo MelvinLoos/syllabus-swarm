@@ -294,14 +294,11 @@ class OutputExportTool(BaseTool):
 
         written = write_directory_tree(base, files_dict, force=self.force)
         return _ok(
-            f"Wrote {len(written)} lab file(s) for '{course_name}' "
-            f"under tier '{tier}'.",
+            f"Wrote {len(written)} lab file(s) for '{course_name}' under tier '{tier}'.",
             str(base),
         )
 
-    def _handle_generate_manifest(
-        self, params: dict[str, Any] | None = None
-    ) -> str:
+    def _handle_generate_manifest(self, params: dict[str, Any] | None = None) -> str:
         """Scan output/ and regenerate output/README.md."""
         if params is None:
             params = {}
@@ -358,9 +355,7 @@ class OutputExportTool(BaseTool):
         graph = CourseGraph(
             specification=specification,
             course_slug=course_slug,
-            learning_objectives=list(
-                params.get("learning_objectives", []) or []
-            ),
+            learning_objectives=list(params.get("learning_objectives", []) or []),
             key_concepts=list(params.get("key_concepts", []) or []),
             prerequisites=list(params.get("prerequisites", []) or []),
             modules=modules,
@@ -369,9 +364,7 @@ class OutputExportTool(BaseTool):
         # ── Write JSON ──────────────────────────────────────────────
         run_id = str(params.get("run_id", "") or "")
         if run_id:
-            output_path = (
-                _PROJECT_ROOT / "output" / run_id / "course_graph.json"
-            )
+            output_path = _PROJECT_ROOT / "output" / run_id / "course_graph.json"
         else:
             # Fall back to top-level output dir
             output_path = _PROJECT_ROOT / "output" / "course_graph.json"
@@ -379,9 +372,7 @@ class OutputExportTool(BaseTool):
         json_content = graph.model_dump_json(indent=2)
         path = write_file(output_path, json_content, force=self.force)
 
-        return _ok(
-            f"Course graph exported for '{course_name}'.", path
-        )
+        return _ok(f"Course graph exported for '{course_name}'.", path)
 
     def _handle_write_file(self, params: dict[str, Any]) -> str:
         """Low-level: write arbitrary content to a single file."""
@@ -410,9 +401,7 @@ class OutputExportTool(BaseTool):
             )
 
         files_dict: dict[str, Any] = files_raw
-        written = write_directory_tree(
-            base_path, files_dict, force=self.force
-        )
+        written = write_directory_tree(base_path, files_dict, force=self.force)
         return _ok(
             f"Wrote {len(written)} file(s) to '{base_path}'.",
             str(written[0]) if written else base_path,
@@ -441,18 +430,18 @@ def build_cli_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  %(prog)s write-syllabus --course \"ML 101\" "
+            '  %(prog)s write-syllabus --course "ML 101" '
             '--content "# Syllabus"\n'
-            "  %(prog)s write-syllabus --course \"ML 101\" "
+            '  %(prog)s write-syllabus --course "ML 101" '
             "--content-file ./syllabus.md\n"
-            "  %(prog)s write-labs --course \"ML 101\" "
+            '  %(prog)s write-labs --course "ML 101" '
             '--tier tier1_foundations --files \'{"lab1.py": "..."}\'\n'
-            "  %(prog)s generate-manifest --course \"ML 101\"\n"
-            "  %(prog)s export-course-graph --course \"ML 101\" "
-            "--slug ml-101 --spec '{\"course_context\":\"...\","
-            "\"primary_language\":\"Python\"}'\n"
+            '  %(prog)s generate-manifest --course "ML 101"\n'
+            '  %(prog)s export-course-graph --course "ML 101" '
+            '--slug ml-101 --spec \'{"course_context":"...",'
+            '"primary_language":"Python"}\'\n'
             "  %(prog)s write-file --path output/test.md "
-            "--content \"# Hello\"\n"
+            '--content "# Hello"\n'
             "  %(prog)s write-directory-tree --base-path output/labs "
             '--files \'{"a.py": "# a"}\'\n'
         ),
@@ -465,9 +454,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
         help="Overwrite existing files without raising an error.",
     )
 
-    sub = parser.add_subparsers(
-        dest="command", required=True, help="Operation to perform."
-    )
+    sub = parser.add_subparsers(dest="command", required=True, help="Operation to perform.")
 
     # ── write-syllabus ──────────────────────────────────────────────
     ws = sub.add_parser(
@@ -480,7 +467,8 @@ def build_cli_parser() -> argparse.ArgumentParser:
         ),
     )
     ws.add_argument(
-        "--course", "-c",
+        "--course",
+        "-c",
         required=True,
         dest="course_name",
         help="Human-readable course title (e.g. 'Data Science with Python').",
@@ -509,13 +497,15 @@ def build_cli_parser() -> argparse.ArgumentParser:
         ),
     )
     wl.add_argument(
-        "--course", "-c",
+        "--course",
+        "-c",
         required=True,
         dest="course_name",
         help="Human-readable course title.",
     )
     wl.add_argument(
-        "--tier", "-t",
+        "--tier",
+        "-t",
         default="tier1_foundations",
         help="Tier directory name (default: 'tier1_foundations').",
     )
@@ -524,7 +514,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
         default="{}",
         help=(
             "JSON object mapping relative file paths to their content.  "
-            "Example: '{\"starter/lab1.py\": \"# TODO\"}'"
+            'Example: \'{"starter/lab1.py": "# TODO"}\''
         ),
     )
     wl.add_argument(
@@ -548,7 +538,8 @@ def build_cli_parser() -> argparse.ArgumentParser:
         ),
     )
     gm.add_argument(
-        "--course", "-c",
+        "--course",
+        "-c",
         default="",
         dest="course_name",
         help="Optional course name included in the manifest header.",
@@ -564,7 +555,8 @@ def build_cli_parser() -> argparse.ArgumentParser:
         ),
     )
     ecg.add_argument(
-        "--course", "-c",
+        "--course",
+        "-c",
         required=True,
         dest="course_name",
         help="Human-readable course title.",
@@ -724,9 +716,7 @@ def main(argv: list[str] | None = None) -> None:
     result_str: str
 
     if command == "write-syllabus":
-        content = _read_content(
-            args.content, getattr(args, "content_file", None)
-        )
+        content = _read_content(args.content, getattr(args, "content_file", None))
         result_str = tool._handle_write_syllabus(
             {"course_name": args.course_name, "content": content}
         )
@@ -737,8 +727,7 @@ def main(argv: list[str] | None = None) -> None:
             files_dict.update(_collect_files_from_dir(args.files_dir))
         if not files_dict:
             result_str = _err(
-                "No files provided.  Use --files or --files-dir to "
-                "specify lab content."
+                "No files provided.  Use --files or --files-dir to specify lab content."
             )
         else:
             result_str = tool._handle_write_labs(
@@ -750,9 +739,7 @@ def main(argv: list[str] | None = None) -> None:
             )
 
     elif command == "generate-manifest":
-        result_str = tool._handle_generate_manifest(
-            {"course_name": args.course_name}
-        )
+        result_str = tool._handle_generate_manifest({"course_name": args.course_name})
 
     elif command == "export-course-graph":
         spec = json.loads(args.specification)
@@ -774,12 +761,8 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     elif command == "write-file":
-        content = _read_content(
-            args.content, getattr(args, "content_file", None)
-        )
-        result_str = tool._handle_write_file(
-            {"path": args.path, "content": content}
-        )
+        content = _read_content(args.content, getattr(args, "content_file", None))
+        result_str = tool._handle_write_file({"path": args.path, "content": content})
 
     elif command == "write-directory-tree":
         files_dict = json.loads(args.files)

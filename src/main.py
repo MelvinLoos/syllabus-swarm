@@ -126,25 +126,15 @@ class IntakeSession(BaseModel):
     and bypass the interactive interview entirely.
     """
 
-    course_name: str = Field(
-        description="Original course name / topic from the user"
-    )
-    questions: str = Field(
-        description="Questions asked by the Intake Specialist agent"
-    )
-    answers: str = Field(
-        description="User's answers to the intake questions"
-    )
+    course_name: str = Field(description="Original course name / topic from the user")
+    questions: str = Field(description="Questions asked by the Intake Specialist agent")
+    answers: str = Field(description="User's answers to the intake questions")
     course_specification: CourseSpecification = Field(
-        description="Synthesised course specification "
-        "(course_context + primary_language)"
+        description="Synthesised course specification (course_context + primary_language)"
     )
-    timestamp: str = Field(
-        description="ISO 8601 timestamp of when the intake interview completed"
-    )
-    run_id: str = Field(
-        description="Unique run identifier (YYYY-MM-DD_HHMMSS_course_slug)"
-    )
+    timestamp: str = Field(description="ISO 8601 timestamp of when the intake interview completed")
+    run_id: str = Field(description="Unique run identifier (YYYY-MM-DD_HHMMSS_course_slug)")
+
 
 # ---------------------------------------------------------------------------
 # CLI — Argument Parser
@@ -171,12 +161,12 @@ def build_cli_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  %(prog)s \"Data Science with Python\"\n"
-            "  %(prog)s \"Laravel Web Development\" --profile config/profiles/program1_profile.yaml\n"
-            "  %(prog)s \"Advanced PHP\" --load-session output/2026-08-22_153000_ML_Basics/intake_session.json\n"
-            "  %(prog)s \"Period 3 Project\" --builds-upon 2026-08-22_153000_ML_Basics\n"
-            "  %(prog)s \"ML Basics\" --resume-from output/2026-08-22_153000_ML_Basics\n"
-            "  %(prog)s \"Full-Stack Web Development\" --skip-labs\n"
+            '  %(prog)s "Data Science with Python"\n'
+            '  %(prog)s "Laravel Web Development" --profile config/profiles/program1_profile.yaml\n'
+            '  %(prog)s "Advanced PHP" --load-session output/2026-08-22_153000_ML_Basics/intake_session.json\n'
+            '  %(prog)s "Period 3 Project" --builds-upon 2026-08-22_153000_ML_Basics\n'
+            '  %(prog)s "ML Basics" --resume-from output/2026-08-22_153000_ML_Basics\n'
+            '  %(prog)s "Full-Stack Web Development" --skip-labs\n'
             "  %(prog)s  # interactive prompt\n"
         ),
     )
@@ -185,7 +175,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
         "course_name",
         nargs="*",
         help=(
-            "Course name / topic (e.g. \"Data Science with Python\").  "
+            'Course name / topic (e.g. "Data Science with Python").  '
             "If omitted, prompts interactively."
         ),
     )
@@ -278,6 +268,7 @@ def _validate_name(name: str) -> str:
         print("❌ Course name is too long (max 200 characters).", file=sys.stderr)
         sys.exit(1)
     return name
+
 
 # ---------------------------------------------------------------------------
 # Profile loading
@@ -378,8 +369,14 @@ def _build_profile_context_string(profile: dict) -> str:
     if tech:
         lines = ["Tech Stack:"]
         for key in (
-            "primary_language", "framework", "frontend", "database",
-            "version_control", "editor", "ci_cd", "containerisation",
+            "primary_language",
+            "framework",
+            "frontend",
+            "database",
+            "version_control",
+            "editor",
+            "ci_cd",
+            "containerisation",
             "deployment",
         ):
             val = tech.get(key)
@@ -409,7 +406,12 @@ def _build_profile_context_string(profile: dict) -> str:
     assess = profile.get("assessment", {})
     if assess:
         lines = ["Assessment:"]
-        for key in ("practical_exams", "portfolio_items", "proeve_preparation", "code_reviews_per_semester"):
+        for key in (
+            "practical_exams",
+            "portfolio_items",
+            "proeve_preparation",
+            "code_reviews_per_semester",
+        ):
             val = assess.get(key)
             if val is not None:
                 lines.append(f"  - {key}: {val}")
@@ -552,14 +554,12 @@ def _resolve_prerequisites(builds_upon_slug: str) -> str:
 
     # Find run directories whose name contains the slug.
     matching_dirs = sorted(
-        d for d in output_dir.iterdir()
-        if d.is_dir() and builds_upon_slug in d.name
+        d for d in output_dir.iterdir() if d.is_dir() and builds_upon_slug in d.name
     )
 
     if not matching_dirs:
         print(
-            f"❌ No run directory found matching slug '{builds_upon_slug}' "
-            f"in {output_dir}",
+            f"❌ No run directory found matching slug '{builds_upon_slug}' in {output_dir}",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -589,8 +589,7 @@ def _resolve_prerequisites(builds_upon_slug: str) -> str:
 
     # Build the prerequisite context string.
     parts: list[str] = [
-        "The students have already mastered the following from a "
-        "previous course:\n",
+        "The students have already mastered the following from a previous course:\n",
     ]
 
     if graph.learning_objectives:
@@ -606,8 +605,7 @@ def _resolve_prerequisites(builds_upon_slug: str) -> str:
 
     if not graph.learning_objectives and not graph.key_concepts:
         parts.append(
-            "(No learning objectives or key concepts were recorded "
-            "in the previous course graph.)\n"
+            "(No learning objectives or key concepts were recorded in the previous course graph.)\n"
         )
 
     return "\n".join(parts)
@@ -684,8 +682,7 @@ def _run_intake(
             if skip_notes:
                 skip_section = (
                     "\n**⚠️  The following fields are ALREADY KNOWN from the "
-                    "cohort profile — DO NOT ask about them:**\n"
-                    + "\n".join(skip_notes)
+                    "cohort profile — DO NOT ask about them:**\n" + "\n".join(skip_notes)
                 )
         # Also note tech stack if primary_language is pre-populated
         if pre_populated.primary_language and pre_populated.primary_language not in ("", "Python"):
@@ -736,9 +733,7 @@ def _run_intake(
         )
         question_result = question_crew.kickoff()
         questions = (
-            question_result.raw
-            if hasattr(question_result, "raw")
-            else str(question_result)
+            question_result.raw if hasattr(question_result, "raw") else str(question_result)
         ).strip()
     except Exception as exc:
         print(f"\n⚠️  Intake Specialist failed to generate questions: {exc}")
@@ -794,8 +789,7 @@ def _run_intake(
                 field_lines.append(f"   - {field}: {getattr(pre_populated, field)}")
             bonus_parts.append(
                 "**Pre-populated constraints from cohort profile "
-                "(already known — incorporate into course_context):**\n"
-                + "\n".join(field_lines)
+                "(already known — incorporate into course_context):**\n" + "\n".join(field_lines)
             )
 
         # Full profile context (schedule, assessment, kerntaken, tech stack)
@@ -803,8 +797,7 @@ def _run_intake(
             bonus_parts.append(
                 "**Additional profile data (schedule, assessment, "
                 "kerntaken emphasis, tech stack) — incorporate ALL of "
-                "this into the course_context:**\n"
-                + pre_populated.course_context
+                "this into the course_context:**\n" + pre_populated.course_context
             )
 
         if bonus_parts:
@@ -870,9 +863,7 @@ def _run_intake(
         else:
             # Fallback: parse from raw text if pydantic output unavailable.
             course_context = (
-                synthesis_result.raw
-                if hasattr(synthesis_result, "raw")
-                else str(synthesis_result)
+                synthesis_result.raw if hasattr(synthesis_result, "raw") else str(synthesis_result)
             ).strip()
             primary_language = "Python"
 
@@ -1058,8 +1049,7 @@ def main(argv: list[str] | None = None) -> None:
     # --- 1. Validate flag combinations ------------------------------------
     if skip_labs and resume_dir:
         print(
-            "❌ --skip-labs and --resume-from cannot be used together "
-            "(this would be a no-op).",
+            "❌ --skip-labs and --resume-from cannot be used together (this would be a no-op).",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1210,15 +1200,12 @@ def main(argv: list[str] | None = None) -> None:
                 raw = session_file.read_text(encoding="utf-8")
                 session_data = json.loads(raw)
                 lang = (
-                    session_data.get("course_specification", {})
-                    .get("primary_language", "")
-                    .strip()
+                    session_data.get("course_specification", {}).get("primary_language", "").strip()
                 )
                 if lang:
                     primary_language = lang
-                    course_context = (
-                        session_data.get("course_specification", {})
-                        .get("course_context", course_context)
+                    course_context = session_data.get("course_specification", {}).get(
+                        "course_context", course_context
                     )
             except (json.JSONDecodeError, KeyError, OSError):
                 pass
@@ -1254,9 +1241,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         session_path = run_dir / "intake_session.json"
         try:
-            session_path.write_text(
-                session.model_dump_json(indent=2), encoding="utf-8"
-            )
+            session_path.write_text(session.model_dump_json(indent=2), encoding="utf-8")
             print(f"💾  Intake session saved to: {session_path}\n")
         except OSError as exc:
             print(f"⚠️  Could not save intake session: {exc}\n")
@@ -1285,5 +1270,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # --- 4. Print summary ------------------------------------------------
     _print_summary(result, course_name)
+
+
 if __name__ == "__main__":
     main()

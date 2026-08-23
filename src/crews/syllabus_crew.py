@@ -105,6 +105,7 @@ def _create_lab_scaffolding(labs_base_path: Path) -> Path:
 # Result container
 # ---------------------------------------------------------------------------
 
+
 class CrewResult:
     """Holds the result of a full syllabus + theory + labs crew run."""
 
@@ -178,9 +179,7 @@ def _find_syllabus_in_dir(resume_dir: Path) -> Path:
 
     md_files = sorted(syllabus_subdir.glob("*.md"))
     if not md_files:
-        raise FileNotFoundError(
-            f"No .md syllabus file found in: {syllabus_subdir}"
-        )
+        raise FileNotFoundError(f"No .md syllabus file found in: {syllabus_subdir}")
 
     return md_files[0]
 
@@ -244,28 +243,27 @@ def _build_top_level_lab_readme(
         lines.append("")
 
     if lab_num == 0:
-        lines.append(
-            "*Labs are still being generated. Check back after the pipeline "
-            "completes.*"
-        )
+        lines.append("*Labs are still being generated. Check back after the pipeline completes.*")
 
-    lines.extend([
-        "## Getting Started",
-        "",
-        "1. Navigate to any lab's `starter/` directory.",
-        "2. Read the `README.md` for learning objectives and instructions.",
-        "3. Complete the TODO markers in the starter files.",
-        "4. Compare your solution with the `solution/` directory.",
-        "",
-        "## Humanics Literacies",
-        "",
-        "- **[T] Technological Literacy** — Every lab requires writing, "
-        "debugging, and running real code.",
-        "- **[D] Data Literacy** — Labs include data processing, analysis, "
-        "and evidence-based decision making.",
-        "- **[H] Human Literacy** — Every README includes ethics, "
-        "accessibility, and collaboration reflection prompts.",
-    ])
+    lines.extend(
+        [
+            "## Getting Started",
+            "",
+            "1. Navigate to any lab's `starter/` directory.",
+            "2. Read the `README.md` for learning objectives and instructions.",
+            "3. Complete the TODO markers in the starter files.",
+            "4. Compare your solution with the `solution/` directory.",
+            "",
+            "## Humanics Literacies",
+            "",
+            "- **[T] Technological Literacy** — Every lab requires writing, "
+            "debugging, and running real code.",
+            "- **[D] Data Literacy** — Labs include data processing, analysis, "
+            "and evidence-based decision making.",
+            "- **[H] Human Literacy** — Every README includes ethics, "
+            "accessibility, and collaboration reflection prompts.",
+        ]
+    )
 
     return "\n".join(lines) + "\n"
 
@@ -360,9 +358,7 @@ def run_syllabus_crew(
             syllabus_raw = syllabus_path.read_text(encoding="utf-8").strip()
 
             if not syllabus_raw:
-                raise RuntimeError(
-                    f"Syllabus file is empty: {syllabus_path}"
-                )
+                raise RuntimeError(f"Syllabus file is empty: {syllabus_path}")
 
             syllabus_ok = True
             if verbose:
@@ -375,8 +371,7 @@ def run_syllabus_crew(
             # something to work with.
             syllabus_path = OUTPUT_ROOT / "resume_failed" / f"{safe_name}.md"
             if verbose:
-                print(f"  ❌  Failed to load syllabus from resume dir: {exc}",
-                      file=sys.stderr)
+                print(f"  ❌  Failed to load syllabus from resume dir: {exc}", file=sys.stderr)
 
         # When resuming, we still create a fresh run directory for the
         # labs output (so each resume produces its own timestamped output).
@@ -467,9 +462,7 @@ def run_syllabus_crew(
             )
             architect_result = architect_crew.kickoff()
             syllabus_raw = (
-                architect_result.raw
-                if hasattr(architect_result, "raw")
-                else str(architect_result)
+                architect_result.raw if hasattr(architect_result, "raw") else str(architect_result)
             ).strip()
 
             if not syllabus_raw:
@@ -485,8 +478,7 @@ def run_syllabus_crew(
             syllabus_error = str(exc)
             write_file(
                 syllabus_path,
-                f"# {course_name} — Syllabus Generation Failed\n\n"
-                f"**Error:** {syllabus_error}\n",
+                f"# {course_name} — Syllabus Generation Failed\n\n**Error:** {syllabus_error}\n",
                 force=True,
             )
 
@@ -515,9 +507,7 @@ def run_syllabus_crew(
             )
             theory_result = theory_crew.kickoff()
             theory_raw = (
-                theory_result.raw
-                if hasattr(theory_result, "raw")
-                else str(theory_result)
+                theory_result.raw if hasattr(theory_result, "raw") else str(theory_result)
             ).strip()
 
             if theory_raw:
@@ -532,10 +522,7 @@ def run_syllabus_crew(
             if verbose:
                 print(f"  ❌  Theory generation failed: {exc}", file=sys.stderr)
     else:
-        theory_error = (
-            "Skipped — Curriculum Architect produced no syllabus "
-            "to use as context."
-        )
+        theory_error = "Skipped — Curriculum Architect produced no syllabus to use as context."
 
     # ── 3. Lab & Project Developer ─────────────────────────────────────
     labs_ok = False
@@ -587,9 +574,7 @@ def run_syllabus_crew(
                     )
                     tier_result = tier_crew.kickoff()
                     tier_raw = (
-                        tier_result.raw
-                        if hasattr(tier_result, "raw")
-                        else str(tier_result)
+                        tier_result.raw if hasattr(tier_result, "raw") else str(tier_result)
                     ).strip()
 
                     if not tier_raw:
@@ -610,26 +595,17 @@ def run_syllabus_crew(
                 top_readme = _build_top_level_lab_readme(
                     course_name, primary_language, labs_base_path
                 )
-                write_file(
-                    labs_base_path / "README.md", top_readme, force=True
-                )
+                write_file(labs_base_path / "README.md", top_readme, force=True)
                 labs_ok = True
             else:
-                labs_error = (
-                    "One or more tier lab tasks failed.  "
-                    "Check the per-tier output above."
-                )
+                labs_error = "One or more tier lab tasks failed.  Check the per-tier output above."
         elif not syllabus_raw:
-            labs_error = (
-                "Skipped — Curriculum Architect produced no syllabus "
-                "to use as context."
-            )
+            labs_error = "Skipped — Curriculum Architect produced no syllabus to use as context."
 
         if labs_error and not (labs_base_path / "README.md").exists():
             write_file(
                 labs_base_path / "README.md",
-                f"# {course_name} — Lab Generation Failed\n\n"
-                f"**Error:** {labs_error}\n",
+                f"# {course_name} — Lab Generation Failed\n\n**Error:** {labs_error}\n",
                 force=True,
             )
 
@@ -659,11 +635,7 @@ def run_syllabus_crew(
                 verbose=verbose,
             )
             qa_result = qa_crew.kickoff()
-            qa_report = (
-                qa_result.raw
-                if hasattr(qa_result, "raw")
-                else str(qa_result)
-            ).strip()
+            qa_report = (qa_result.raw if hasattr(qa_result, "raw") else str(qa_result)).strip()
 
             if qa_report:
                 qa_ok = True

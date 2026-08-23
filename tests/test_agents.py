@@ -152,9 +152,7 @@ class TestCreateCurriculumArchitect:
     def test_explicit_llm_bypasses_factory(self, mock_llm: MagicMock) -> None:
         """When an LLM is passed explicitly, the factory is not called."""
         custom_llm = MagicMock(spec=LLM)
-        with patch(
-            "src.agents.curriculum_architect.build_llm_for_agent"
-        ) as mock_build:
+        with patch("src.agents.curriculum_architect.build_llm_for_agent") as mock_build:
             agent = create_curriculum_architect(llm=custom_llm)
             assert agent.llm is custom_llm
             mock_build.assert_not_called()
@@ -293,9 +291,7 @@ class TestCreateLabDeveloper:
     def test_explicit_llm_bypasses_factory(self, mock_llm: MagicMock) -> None:
         """When an LLM is passed explicitly, the factory is not called."""
         custom_llm = MagicMock(spec=LLM)
-        with patch(
-            "src.agents.lab_developer.build_llm_for_agent"
-        ) as mock_build:
+        with patch("src.agents.lab_developer.build_llm_for_agent") as mock_build:
             agent = create_lab_developer(llm=custom_llm)
             assert agent.llm is custom_llm
             mock_build.assert_not_called()
@@ -336,9 +332,7 @@ class TestCreateLabDeveloper:
             return_value=mock_llm,
         ):
             agent = create_lab_developer()
-            export_tool = next(
-                t for t in agent.tools if t.name == "output_export_tool"
-            )
+            export_tool = next(t for t in agent.tools if t.name == "output_export_tool")
             assert export_tool.force is True
 
 
@@ -447,9 +441,7 @@ class TestCreateQaReviewer:
     def test_explicit_llm_bypasses_factory(self, mock_llm: MagicMock) -> None:
         """When an LLM is passed explicitly, the factory is not called."""
         custom_llm = MagicMock(spec=LLM)
-        with patch(
-            "src.agents.qa_reviewer.build_llm_for_agent"
-        ) as mock_build:
+        with patch("src.agents.qa_reviewer.build_llm_for_agent") as mock_build:
             agent = create_qa_reviewer(llm=custom_llm)
             assert agent.llm is custom_llm
             mock_build.assert_not_called()
@@ -473,9 +465,7 @@ class TestCreateQaReviewer:
             return_value=mock_llm,
         ):
             agent = create_qa_reviewer()
-            export_tool = next(
-                t for t in agent.tools if t.name == "output_export_tool"
-            )
+            export_tool = next(t for t in agent.tools if t.name == "output_export_tool")
             assert export_tool.force is True
 
     def test_goal_mentions_delegation(self, mock_llm: MagicMock) -> None:
@@ -505,6 +495,7 @@ class TestModuleSingletons:
         ):
             # Reset the singleton before test
             import src.agents.curriculum_architect as ca
+
             ca._architect_instance = None
 
             agent = get_architect()
@@ -518,6 +509,7 @@ class TestModuleSingletons:
             return_value=mock_llm,
         ):
             import src.agents.curriculum_architect as ca
+
             ca._architect_instance = None
 
             a1 = get_architect()
@@ -531,6 +523,7 @@ class TestModuleSingletons:
             return_value=mock_llm,
         ):
             import src.agents.lab_developer as ld
+
             ld._lab_dev_instance = None
 
             agent = get_lab_developer()
@@ -544,6 +537,7 @@ class TestModuleSingletons:
             return_value=mock_llm,
         ):
             import src.agents.lab_developer as ld
+
             ld._lab_dev_instance = None
 
             a1 = get_lab_developer()
@@ -557,6 +551,7 @@ class TestModuleSingletons:
             return_value=mock_llm,
         ):
             import src.agents.qa_reviewer as qa
+
             qa._qa_reviewer_instance = None
 
             agent = get_qa_reviewer()
@@ -570,6 +565,7 @@ class TestModuleSingletons:
             return_value=mock_llm,
         ):
             import src.agents.qa_reviewer as qa
+
             qa._qa_reviewer_instance = None
 
             a1 = get_qa_reviewer()
@@ -583,6 +579,7 @@ class TestModuleSingletons:
             return_value=mock_llm,
         ):
             import src.agents.theory_instructor as ti
+
             ti._theory_instructor_instance = None
 
             agent = get_theory_instructor()
@@ -596,6 +593,7 @@ class TestModuleSingletons:
             return_value=mock_llm,
         ):
             import src.agents.theory_instructor as ti
+
             ti._theory_instructor_instance = None
 
             a1 = get_theory_instructor()
@@ -700,9 +698,7 @@ class TestCreateTheoryInstructor:
     def test_explicit_llm_bypasses_factory(self, mock_llm: MagicMock) -> None:
         """When an LLM is passed explicitly, the factory is not called."""
         custom_llm = MagicMock(spec=LLM)
-        with patch(
-            "src.agents.theory_instructor.build_llm_for_agent"
-        ) as mock_build:
+        with patch("src.agents.theory_instructor.build_llm_for_agent") as mock_build:
             agent = create_theory_instructor(llm=custom_llm)
             assert agent.llm is custom_llm
             mock_build.assert_not_called()
@@ -724,7 +720,5 @@ class TestCreateTheoryInstructor:
             return_value=mock_llm,
         ):
             agent = create_theory_instructor()
-            export_tool = next(
-                t for t in agent.tools if t.name == "output_export_tool"
-            )
+            export_tool = next(t for t in agent.tools if t.name == "output_export_tool")
             assert export_tool.force is True

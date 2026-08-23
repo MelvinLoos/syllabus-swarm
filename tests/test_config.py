@@ -128,6 +128,8 @@ class TestCourseSpecificationOptionalFields:
         )
         data = spec.model_dump()
         assert data["grading_scale"] is None
+
+
 # ===================================================================
 # YAML Parsing — school_defaults.yaml
 # ===================================================================
@@ -198,6 +200,8 @@ class TestSchoolDefaultsYaml:
         assert 1 in data["year_levels"]
         assert 2 in data["year_levels"]
         assert 3 in data["year_levels"]
+
+
 # ===================================================================
 # YAML Parsing — program1_profile.yaml
 # ===================================================================
@@ -277,6 +281,8 @@ class TestProgram1ProfileYaml:
         with open(_PROGRAM1_PROFILE, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         assert "assessment" in data
+
+
 # ===================================================================
 # _load_profile — YAML loading with validation
 # ===================================================================
@@ -337,6 +343,8 @@ class TestLoadProfile:
         """Relative paths are resolved against _PROJECT_ROOT."""
         data = _load_profile("config/profiles/program1_profile.yaml")
         assert isinstance(data, dict)
+
+
 # ===================================================================
 # _inject_profile — Model injection from profile
 # ===================================================================
@@ -375,9 +383,7 @@ class TestInjectProfile:
         spec = _inject_profile(empty_spec, loaded_profile)
         assert "BYOD" in spec.hardware_constraints
 
-    def test_injects_primary_language_from_tech_stack(
-        self, empty_spec, loaded_profile
-    ) -> None:
+    def test_injects_primary_language_from_tech_stack(self, empty_spec, loaded_profile) -> None:
         """primary_language is extracted from tech_stack.primary_language."""
         spec = _inject_profile(empty_spec, loaded_profile)
         assert spec.primary_language == "PHP"
@@ -396,9 +402,7 @@ class TestInjectProfile:
         assert spec.student_pathway == "BOL"
         assert "BYOD" in spec.hardware_constraints
 
-    def test_does_not_overwrite_non_default_primary_language(
-        self, loaded_profile
-    ) -> None:
+    def test_does_not_overwrite_non_default_primary_language(self, loaded_profile) -> None:
         """primary_language preserved when already set to a real value."""
         spec = CourseSpecification(
             course_context="ctx",
@@ -443,6 +447,8 @@ class TestInjectProfile:
         assert spec.grading_scale is None
         assert spec.student_pathway is None
         assert spec.year_level == 2
+
+
 # ===================================================================
 # _get_pre_populated_fields — Helper
 # ===================================================================
@@ -470,10 +476,14 @@ class TestGetPrePopulatedFields:
             hardware_constraints="BYOD",
         )
         fields = _get_pre_populated_fields(spec)
-        assert sorted(fields) == sorted([
-            "grading_scale", "student_pathway",
-            "year_level", "hardware_constraints",
-        ])
+        assert sorted(fields) == sorted(
+            [
+                "grading_scale",
+                "student_pathway",
+                "year_level",
+                "hardware_constraints",
+            ]
+        )
 
     def test_returns_partial_list(self) -> None:
         """Only actually-set fields are returned."""
@@ -628,5 +638,3 @@ class TestEndToEndProfileFlow:
         assert spec2.student_pathway == spec1.student_pathway
         assert spec2.year_level == spec1.year_level
         assert spec2.hardware_constraints == spec1.hardware_constraints
-
-

@@ -26,6 +26,7 @@ from src.main import (
 # Shared test data
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def sample_spec() -> CourseSpecification:
     """A realistic CourseSpecification for testing."""
@@ -170,14 +171,10 @@ class TestIntakeSessionRoundTrip:
         assert restored_spec.primary_language == orig.primary_language
         assert isinstance(restored_spec, CourseSpecification)
 
-    def test_file_round_trip(
-        self, sample_session: IntakeSession, tmp_path: Path
-    ) -> None:
+    def test_file_round_trip(self, sample_session: IntakeSession, tmp_path: Path) -> None:
         # Save
         session_file = tmp_path / "intake_session.json"
-        session_file.write_text(
-            sample_session.model_dump_json(indent=2), encoding="utf-8"
-        )
+        session_file.write_text(sample_session.model_dump_json(indent=2), encoding="utf-8")
         assert session_file.exists()
         # Load
         raw = session_file.read_text(encoding="utf-8")
@@ -199,19 +196,13 @@ class TestIntakeSessionRoundTrip:
         bad_file = tmp_path / "bad_session.json"
         bad_file.write_text("this is not json", encoding="utf-8")
         with pytest.raises(Exception):
-            IntakeSession.model_validate_json(
-                bad_file.read_text(encoding="utf-8")
-            )
+            IntakeSession.model_validate_json(bad_file.read_text(encoding="utf-8"))
 
     def test_valid_json_wrong_schema_raises(self, tmp_path: Path) -> None:
         wrong_file = tmp_path / "wrong_schema.json"
-        wrong_file.write_text(
-            json.dumps({"some": "random", "fields": 42}), encoding="utf-8"
-        )
+        wrong_file.write_text(json.dumps({"some": "random", "fields": 42}), encoding="utf-8")
         with pytest.raises(ValidationError):
-            IntakeSession.model_validate_json(
-                wrong_file.read_text(encoding="utf-8")
-            )
+            IntakeSession.model_validate_json(wrong_file.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------

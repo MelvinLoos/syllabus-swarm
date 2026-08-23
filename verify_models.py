@@ -135,6 +135,8 @@ class _Ansi:
 
 
 C = _Ansi
+
+
 # ---------------------------------------------------------------------------
 # TypedDict for the OpenRouter model list response (subset we care about)
 # ---------------------------------------------------------------------------
@@ -222,9 +224,7 @@ def run_availability_check(available_ids: list[str]) -> dict[str, bool]:
     for role, info in V2_ASSIGNMENTS.items():
         targets.append((info["model"], role, info["rationale"]))
     # Add the hardcoded fallback
-    targets.append(
-        (HARDCODED_FALLBACK, "FALLBACK (all agents)", "Backward-compatible catch-all")
-    )
+    targets.append((HARDCODED_FALLBACK, "FALLBACK (all agents)", "Backward-compatible catch-all"))
 
     # --- Table dimensions ---
     col_id = 38
@@ -232,15 +232,9 @@ def run_availability_check(available_ids: list[str]) -> dict[str, bool]:
     col_status = 18
 
     print(C.bold("  MODEL AVAILABILITY"))
-    print(
-        f"  ┌─{'─' * col_id}─┬─{'─' * col_role}─┬─{'─' * col_status}─┐"
-    )
-    print(
-        f"  │ {'Model ID':<{col_id}} │ {'Assigned To':<{col_role}} │ {'Status':<{col_status}} │"
-    )
-    print(
-        f"  ├─{'─' * col_id}─┼─{'─' * col_role}─┼─{'─' * col_status}─┤"
-    )
+    print(f"  ┌─{'─' * col_id}─┬─{'─' * col_role}─┬─{'─' * col_status}─┐")
+    print(f"  │ {'Model ID':<{col_id}} │ {'Assigned To':<{col_role}} │ {'Status':<{col_status}} │")
+    print(f"  ├─{'─' * col_id}─┼─{'─' * col_role}─┼─{'─' * col_status}─┤")
 
     results: dict[str, bool] = {}
     unavailable: list[tuple[str, str]] = []
@@ -252,15 +246,11 @@ def run_availability_check(available_ids: list[str]) -> dict[str, bool]:
             status = C.green("✅ Available     ")
         else:
             status = C.red("❌ NOT FOUND    ")
-        print(
-            f"  │ {model_id:<{col_id}} │ {role:<{col_role}} │ {status:<{col_status + 9}} │"
-        )
+        print(f"  │ {model_id:<{col_id}} │ {role:<{col_role}} │ {status:<{col_status + 9}} │")
         if not available:
             unavailable.append((model_id, role))
 
-    print(
-        f"  └─{'─' * col_id}─┴─{'─' * col_role}─┴─{'─' * col_status}─┘"
-    )
+    print(f"  └─{'─' * col_id}─┴─{'─' * col_role}─┴─{'─' * col_status}─┘")
     print()
 
     # --- Warnings + alternatives for unavailable models ---
@@ -276,12 +266,12 @@ def run_availability_check(available_ids: list[str]) -> dict[str, bool]:
                     print(f"        • {alt}")
             else:
                 provider = model_id.split("/")[0] if "/" in model_id else "?"
-                print(
-                    f"      {C.yellow(f'No other {provider}/ models found on OpenRouter.')}"
-                )
+                print(f"      {C.yellow(f'No other {provider}/ models found on OpenRouter.')}")
             print()
 
     return results
+
+
 # ---------------------------------------------------------------------------
 # PART 2 — Smoke test (fallback-chain resolution)
 # ---------------------------------------------------------------------------
@@ -312,10 +302,7 @@ def run_smoke_test() -> bool:
     # -- Test A: v2 per-agent env vars set → expect new models ----------
     v2_env = _env_for_v2()
 
-    print(
-        f"  {C.cyan('Test A:')} v2 per-agent model assignments "
-        f"(AGENT_{{ROLE}}_MODEL set)"
-    )
+    print(f"  {C.cyan('Test A:')} v2 per-agent model assignments (AGENT_{{ROLE}}_MODEL set)")
     for info in V2_ASSIGNMENTS.values():
         print(f"    {info['env_var']}={info['model']}")
 
@@ -330,12 +317,11 @@ def run_smoke_test() -> bool:
 
             mark = C.green("✅") if ok else C.red("❌")
             status = (
-                C.green(f"(expected: {expected})") if ok
+                C.green(f"(expected: {expected})")
+                if ok
                 else C.red(f"(expected: {expected}, GOT: {resolved})")
             )
-            print(
-                f"    {mark} {_pad_role(role)} → {resolved}  {status}"
-            )
+            print(f"    {mark} {_pad_role(role)} → {resolved}  {status}")
 
     # -- Test B: no per-agent or legacy vars → expect hardcoded fallback --
     print(f"\n  {C.cyan('Test B:')} No per-agent / legacy vars → hardcoded fallback")
@@ -352,17 +338,14 @@ def run_smoke_test() -> bool:
 
             mark = C.green("✅") if ok else C.red("❌")
             status = (
-                C.green(f"(expected: {expected})") if ok
+                C.green(f"(expected: {expected})")
+                if ok
                 else C.red(f"(expected: {expected}, GOT: {resolved})")
             )
-            print(
-                f"    {mark} {_pad_role(role)} → {resolved}  {status}"
-            )
+            print(f"    {mark} {_pad_role(role)} → {resolved}  {status}")
 
     # -- Test C: build_llm_for_agent() constructs valid LLM objects -----
-    print(
-        f"\n  {C.cyan('Test C:')} build_llm_for_agent() returns valid LLM objects"
-    )
+    print(f"\n  {C.cyan('Test C:')} build_llm_for_agent() returns valid LLM objects")
     print(
         "      (crewai.LLM may strip or keep the provider prefix depending "
         "on whether litellm is installed.)"
@@ -410,6 +393,8 @@ def run_smoke_test() -> bool:
         )
 
     return all_ok
+
+
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -429,7 +414,8 @@ def main() -> int:
         help="Skip OpenRouter network check; only run the config smoke test.",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Print extra diagnostics.",
     )
@@ -486,11 +472,7 @@ def main() -> int:
     print(C.bold("=" * 64))
 
     if args.check_only:
-        print(
-            C.bold(
-                "  Note: Network check skipped. Only config resolution was validated."
-            )
-        )
+        print(C.bold("  Note: Network check skipped. Only config resolution was validated."))
     if exit_code == 0:
         print(C.bold(C.green("  Result: ALL CHECKS PASSED")))
     else:

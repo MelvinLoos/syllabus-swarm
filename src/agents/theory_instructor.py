@@ -49,6 +49,7 @@ from src.llm_factory import (
 # Agent factory
 # ---------------------------------------------------------------------------
 
+
 def create_theory_instructor(
     *,
     llm: LLM | None = None,

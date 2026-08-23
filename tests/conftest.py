@@ -17,6 +17,7 @@ from crewai import LLM
 # Mock LLM — a MagicMock spec'd to crewai.LLM so tests never hit the network
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def mock_llm() -> MagicMock:
     """Return a MagicMock that looks like a crewai.LLM instance.
@@ -39,6 +40,7 @@ def mock_llm() -> MagicMock:
 # task test ever constructs a real LLM.
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def mock_llm_factory(mock_llm: MagicMock) -> MagicMock:
     """Patch ``src.llm_factory.build_llm_for_agent`` to return *mock_llm*.
@@ -46,15 +48,14 @@ def mock_llm_factory(mock_llm: MagicMock) -> MagicMock:
     The patched function is returned so callers can assert it was invoked
     with the expected role constant.
     """
-    with patch(
-        "src.llm_factory.build_llm_for_agent", return_value=mock_llm
-    ) as mock_build:
+    with patch("src.llm_factory.build_llm_for_agent", return_value=mock_llm) as mock_build:
         yield mock_build
 
 
 # ---------------------------------------------------------------------------
 # Reusable test values
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def sample_course_name() -> str:
@@ -71,6 +72,7 @@ def sample_course_name_safe() -> str:
 # ---------------------------------------------------------------------------
 # Temporary project root — mimics the real project layout inside tmp_path
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def tmp_project_root(tmp_path: Path) -> Path:

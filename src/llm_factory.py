@@ -188,15 +188,10 @@ def build_llm_for_agent(
         If *agent_role* is empty or not a string.
     """
     if not agent_role or not isinstance(agent_role, str):
-        raise ValueError(
-            f"agent_role must be a non-empty string, got {agent_role!r}"
-        )
+        raise ValueError(f"agent_role must be a non-empty string, got {agent_role!r}")
 
     # Resolve the API key — use explicit argument first, then env var.
-    resolved_api_key: str = (
-        api_key if api_key is not None
-        else os.getenv("OPENROUTER_API_KEY", "")
-    )
+    resolved_api_key: str = api_key if api_key is not None else os.getenv("OPENROUTER_API_KEY", "")
 
     model: str = _resolve_property(
         agent_role,
@@ -245,30 +240,32 @@ def get_effective_config(agent_role: str) -> dict[str, object]:
     when you need the resolved values in code rather than printed to stdout.
     """
     resolved_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
-    api_key_status: str = (
-        "set" if resolved_api_key else "missing — authentication will fail"
-    )
+    api_key_status: str = "set" if resolved_api_key else "missing — authentication will fail"
 
     return {
         "role": agent_role,
         "model": _resolve_property(
-            agent_role, "MODEL",
+            agent_role,
+            "MODEL",
             legacy_key="OPENROUTER_MODEL",
             hardcoded_default=_DEFAULT_MODEL,
         ),
         "temperature": _resolve_numeric(
-            agent_role, "TEMPERATURE",
+            agent_role,
+            "TEMPERATURE",
             legacy_key="AGENT_TEMPERATURE",
             hardcoded_default=_DEFAULT_TEMPERATURE,
         ),
         "top_p": _resolve_numeric(
-            agent_role, "TOP_P",
+            agent_role,
+            "TOP_P",
             legacy_key="AGENT_TOP_P",
             hardcoded_default=_DEFAULT_TOP_P,
         ),
         "max_tokens": int(
             _resolve_numeric(
-                agent_role, "MAX_TOKENS",
+                agent_role,
+                "MAX_TOKENS",
                 legacy_key="AGENT_MAX_TOKENS",
                 hardcoded_default=_DEFAULT_MAX_TOKENS,
             )
@@ -326,6 +323,8 @@ def list_agent_configs() -> None:
     print()
     print("=" * 60)
     print()
+
+
 # ---------------------------------------------------------------------------
 # Self-test
 # ---------------------------------------------------------------------------

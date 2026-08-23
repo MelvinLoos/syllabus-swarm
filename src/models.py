@@ -126,8 +126,8 @@ class CourseGraph(BaseModel):
         description="Ordered list of course modules.",
     )
     generated_at: str = Field(
-        default_factory=lambda: datetime.datetime.now(
-            tz=datetime.UTC
-        ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        default_factory=lambda: datetime.datetime.now(tz=datetime.UTC).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        ),
         description="ISO 8601 UTC timestamp when the graph was generated.",
     )

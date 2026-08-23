@@ -54,7 +54,7 @@ _ARTIFACT_REQUIREMENTS: str = (
     "- Single, self-contained file that opens in any browser.\n"
     "- Inline ``<style>`` for all CSS (no external stylesheets).\n"
     "- Inline ``<script>`` for all JavaScript (no external libraries unless "
-    "absolutely essential; if needed, use a CDN ``<script src=\"...\">``).\n"
+    'absolutely essential; if needed, use a CDN ``<script src="...">``).\n'
     "- Clear title (``<h1>``) and learning objectives (``<ul>``) at the top.\n"
     "- Interactive controls: buttons, sliders, input fields, or draggable "
     "elements that let the student manipulate the visualisation.\n"
@@ -95,7 +95,7 @@ _TOOL_USAGE_MANDATE: str = (
     "at the start of this task description (look for ``**Run ID:**`` and "
     "``**Course Name:**``).  You MUST include these in EVERY tool call.\n"
     "2. Generate the theory artifact for **Tier 1** first.  Call "
-    "`output_export_tool` with `command=\"write-directory-tree\"`, passing "
+    '`output_export_tool` with `command="write-directory-tree"`, passing '
     "`base_path` and `files` (a dict mapping relative paths to file contents).\n"
     "3. After Tier 1 files are written, move to **Tier 2** and repeat.\n"
     "4. After Tier 2, move to **Tier 3** and repeat.\n"
@@ -178,9 +178,7 @@ def create_theory_task(
         ctx = syllabus_context
         if len(ctx) > 4000:
             ctx = ctx[:4000] + "\n\n[... syllabus truncated for length ...]\n"
-        description_parts.append(
-            f"\n**Syllabus Context:**\n\n{ctx}\n"
-        )
+        description_parts.append(f"\n**Syllabus Context:**\n\n{ctx}\n")
 
     description_parts.append(
         f"\n\nYour task is to read the syllabus above, identify the core "
@@ -197,7 +195,7 @@ def create_theory_task(
     # ---- Build the expected_output --------------------------------------
     expected_output = (
         "## 🔴 CRITICAL: You MUST use the `output_export_tool`\n\n"
-        "Use the `output_export_tool` with `command=\"write-directory-tree\"` "
+        'Use the `output_export_tool` with `command="write-directory-tree"` '
         "to write ALL theory artifacts to disk.  Write exactly ONE artifact "
         "per tier into the `theory/` subfolder of each tier's lab directory:\n\n"
         "- `output/<run_id>/labs/<course_name>/tier1_foundations/theory/`\n"

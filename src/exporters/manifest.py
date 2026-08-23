@@ -53,6 +53,7 @@ _PROJECT_ROOT: Path = OUTPUT_PATHS.root
 # Helper — build a relative path string for display
 # ---------------------------------------------------------------------------
 
+
 def _rel(path: Path) -> str:
     """Return *path* relative to the project root, or its absolute form."""
     try:
@@ -70,7 +71,7 @@ def _rel(path: Path) -> str:
 class ArtifactSummary:
     """Lightweight stats for a single exported file or directory."""
 
-    path: str           # relative path from project root
+    path: str  # relative path from project root
     size_bytes: int = 0
     is_dir: bool = False
     file_count: int = 0  # recursive file count when is_dir=True
@@ -81,9 +82,9 @@ class ManifestData:
     """Aggregated summary of everything under ``output/``."""
 
     generated_at: str = field(
-        default_factory=lambda: datetime.datetime.now(
-            tz=datetime.UTC
-        ).strftime("%Y-%m-%d %H:%M:%S UTC")
+        default_factory=lambda: datetime.datetime.now(tz=datetime.UTC).strftime(
+            "%Y-%m-%d %H:%M:%S UTC"
+        )
     )
     course_name: str = ""
     syllabus: ArtifactSummary | None = None
@@ -161,11 +162,7 @@ def _build_tree(
 
     name = path.name or str(path)
     connector = "└── " if is_last else "├── "
-    lines.append(
-        f"{prefix}{connector}{name}/"
-        if path.is_dir()
-        else f"{prefix}{connector}{name}"
-    )
+    lines.append(f"{prefix}{connector}{name}/" if path.is_dir() else f"{prefix}{connector}{name}")
 
     if path.is_dir():
         entries = sorted(
@@ -217,6 +214,8 @@ def _render_subtree(node: Path, prefix: str, is_last: bool) -> list[str]:
     else:
         lines.append(f"{prefix}{connector}{node.name}")
     return lines
+
+
 # ---------------------------------------------------------------------------
 # Size formatter
 # ---------------------------------------------------------------------------
@@ -235,6 +234,8 @@ def _format_size(num_bytes: int) -> str:
     if unit_idx == 0:
         return f"{int(size)} B"
     return f"{size:.1f} {units[unit_idx]}"
+
+
 # ---------------------------------------------------------------------------
 # Core API
 # ---------------------------------------------------------------------------
@@ -283,9 +284,7 @@ def update_output_manifest(
     total_files = sum(e.file_count for e in all_entries)
     total_bytes = sum(e.size_bytes for e in all_entries)
 
-    ts = datetime.datetime.now(tz=datetime.UTC).strftime(
-        "%Y-%m-%d %H:%M:%S UTC"
-    )
+    ts = datetime.datetime.now(tz=datetime.UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     lines: list[str] = []
     lines.append("# 📦  Syllabus Swarm — Output Manifest\n")
@@ -305,30 +304,21 @@ def update_output_manifest(
     rub_bytes = sum(e.size_bytes for e in rubrics_entries)
 
     lines.append(
-        f"| Syllabi        | {len(syllabus_entries):>5} | "
-        f"{_format_size(syl_bytes):>10} |\n"
+        f"| Syllabi        | {len(syllabus_entries):>5} | {_format_size(syl_bytes):>10} |\n"
+    )
+    lines.append(f"| Lab courses    | {len(labs_entries):>5} | {_format_size(lab_bytes):>10} |\n")
+    lines.append(
+        f"| Rubrics        | {len(rubrics_entries):>5} | {_format_size(rub_bytes):>10} |\n"
     )
     lines.append(
-        f"| Lab courses    | {len(labs_entries):>5} | "
-        f"{_format_size(lab_bytes):>10} |\n"
-    )
-    lines.append(
-        f"| Rubrics        | {len(rubrics_entries):>5} | "
-        f"{_format_size(rub_bytes):>10} |\n"
-    )
-    lines.append(
-        f"| **Total**      | **{total_files:>3}** | "
-        f"**{_format_size(total_bytes):>8}** |\n"
+        f"| **Total**      | **{total_files:>3}** | **{_format_size(total_bytes):>8}** |\n"
     )
     lines.append("\n")
 
     if syllabus_entries:
         lines.append("## 📄  Syllabi\n\n")
         for entry in syllabus_entries:
-            lines.append(
-                f"- [`{entry.path}`]({entry.path}) "
-                f"({_format_size(entry.size_bytes)})\n"
-            )
+            lines.append(f"- [`{entry.path}`]({entry.path}) ({_format_size(entry.size_bytes)})\n")
         lines.append("\n")
 
     if labs_entries:
@@ -343,18 +333,14 @@ def update_output_manifest(
                 _append_tier_breakdown(lines, _PROJECT_ROOT / entry.path)
             else:
                 lines.append(
-                    f"- [`{entry.path}`]({entry.path}) "
-                    f"({_format_size(entry.size_bytes)})\n"
+                    f"- [`{entry.path}`]({entry.path}) ({_format_size(entry.size_bytes)})\n"
                 )
         lines.append("\n")
 
     if rubrics_entries:
         lines.append("## 📋  Rubrics\n\n")
         for entry in rubrics_entries:
-            lines.append(
-                f"- [`{entry.path}`]({entry.path}) "
-                f"({_format_size(entry.size_bytes)})\n"
-            )
+            lines.append(f"- [`{entry.path}`]({entry.path}) ({_format_size(entry.size_bytes)})\n")
         lines.append("\n")
 
     if output_dir.exists():
@@ -380,9 +366,7 @@ def update_output_manifest(
     # ── Optionally write course_graph.json alongside README ───────────
     if course_graph is not None:
         graph_path = output_dir / "course_graph.json"
-        write_file(
-            graph_path, course_graph.model_dump_json(indent=2), force=True
-        )
+        write_file(graph_path, course_graph.model_dump_json(indent=2), force=True)
 
     return write_file(manifest_path, manifest_content, force=True)
 
@@ -394,10 +378,7 @@ def _append_tier_breakdown(lines: list[str], dir_path: Path) -> None:
     for tier in sorted(dir_path.iterdir()):
         if not tier.is_dir() or tier.name.startswith("."):
             continue
-        tier_files = sum(
-            1 for _ in tier.rglob("*")
-            if _.is_file() and not _.name.startswith(".")
-        )
+        tier_files = sum(1 for _ in tier.rglob("*") if _.is_file() and not _.name.startswith("."))
         tier_size = 0
         for f in tier.rglob("*"):
             if f.is_file() and not f.name.startswith("."):
@@ -405,9 +386,5 @@ def _append_tier_breakdown(lines: list[str], dir_path: Path) -> None:
                     tier_size += f.stat().st_size
                 except OSError:
                     pass
-        lines.append(
-            f"  └─ `{tier.name}/` — "
-            f"{tier_files} file(s), "
-            f"{_format_size(tier_size)}\n"
-        )
+        lines.append(f"  └─ `{tier.name}/` — {tier_files} file(s), {_format_size(tier_size)}\n")
     lines.append("\n")

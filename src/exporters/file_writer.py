@@ -53,9 +53,7 @@ class FileWriteError(Exception):
 
 # Characters that are illegal on Windows, risky on POSIX, or problematic
 # inside tooling and version-control systems.
-_ILLEGAL_CHARS_RE: re.Pattern[str] = re.compile(
-    r'[<>:"/\\|?*\x00-\x1f]'
-)
+_ILLEGAL_CHARS_RE: re.Pattern[str] = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 # Runs of underscores/spaces/dashes longer than this get collapsed.
 _MAX_REPEATED_SEP: int = 2
@@ -149,11 +147,37 @@ OUTPUT_PATHS: OutputPathConfig = OutputPathConfig()
 # Recognised extensions that are treated as plain-text code files.
 _CODE_EXTENSIONS: frozenset[str] = frozenset(
     {
-        ".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java",
-        ".c", ".cpp", ".h", ".rb", ".sh", ".bash", ".ps1",
-        ".sql", ".yml", ".yaml", ".toml", ".json", ".xml",
-        ".html", ".css", ".scss", ".txt", ".cfg", ".ini", ".env",
-        ".gitignore", ".dockerfile", ".makefile",
+        ".py",
+        ".js",
+        ".ts",
+        ".jsx",
+        ".tsx",
+        ".go",
+        ".rs",
+        ".java",
+        ".c",
+        ".cpp",
+        ".h",
+        ".rb",
+        ".sh",
+        ".bash",
+        ".ps1",
+        ".sql",
+        ".yml",
+        ".yaml",
+        ".toml",
+        ".json",
+        ".xml",
+        ".html",
+        ".css",
+        ".scss",
+        ".txt",
+        ".cfg",
+        ".ini",
+        ".env",
+        ".gitignore",
+        ".dockerfile",
+        ".makefile",
     }
 )
 
@@ -176,9 +200,7 @@ def _is_markdown_file(path: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_path(
-    path: str | Path, *, must_be_under_root: bool = True
-) -> Path:
+def _resolve_path(path: str | Path, *, must_be_under_root: bool = True) -> Path:
     """Resolve *path* to an absolute ``Path`` and optionally enforce it
     lives under the project root.
 
@@ -278,9 +300,7 @@ def write_file(
 
     # --- Overwrite guard -------------------------------------------------
     if resolved.exists() and not force:
-        raise FileWriteError(
-            f"File already exists: '{resolved}'.  Use force=True to overwrite."
-        )
+        raise FileWriteError(f"File already exists: '{resolved}'.  Use force=True to overwrite.")
 
     # --- Create parent directories ---------------------------------------
     resolved.parent.mkdir(parents=True, exist_ok=True)
@@ -351,8 +371,7 @@ def write_directory_tree(
 
     if not files_dict:
         warnings.warn(
-            "write_directory_tree called with an empty files_dict.  "
-            "No files were written.",
+            "write_directory_tree called with an empty files_dict.  No files were written.",
             UserWarning,
             stacklevel=2,
         )
@@ -470,21 +489,11 @@ def write_lab_file(
         If *subfolder* is not ``"starter"`` or ``"solution"``.
     """
     if subfolder not in ("starter", "solution"):
-        raise ValueError(
-            f"subfolder must be 'starter' or 'solution', got '{subfolder}'."
-        )
+        raise ValueError(f"subfolder must be 'starter' or 'solution', got '{subfolder}'.")
 
     safe_course = _sanitize_filename(course_name)
-    safe_filename = _sanitize_filename(
-        str(Path(filename).name), replace_spaces=False
-    )
-    path = (
-        OUTPUT_PATHS.labs_dir
-        / safe_course
-        / tier
-        / subfolder
-        / safe_filename
-    )
+    safe_filename = _sanitize_filename(str(Path(filename).name), replace_spaces=False)
+    path = OUTPUT_PATHS.labs_dir / safe_course / tier / subfolder / safe_filename
     return write_file(path, content, force=force)
 
 

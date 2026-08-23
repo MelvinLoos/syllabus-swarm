@@ -45,6 +45,7 @@ from src.llm_factory import (
 # Agent factory
 # ---------------------------------------------------------------------------
 
+
 def create_curriculum_architect(
     *,
     llm: LLM | None = None,

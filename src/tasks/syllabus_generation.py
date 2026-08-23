@@ -183,24 +183,17 @@ def create_syllabus_generation_task(
 
     if course_context:
         description_parts.append(
-            f"\n**Course Context (from Intake Specialist):**\n"
-            f"{course_context}\n"
+            f"\n**Course Context (from Intake Specialist):**\n{course_context}\n"
         )
 
     if course_description:
-        description_parts.append(
-            f"\n**Course Description:** {course_description}\n"
-        )
+        description_parts.append(f"\n**Course Description:** {course_description}\n")
 
     if course_duration:
-        description_parts.append(
-            f"\n**Course Duration:** {course_duration}\n"
-        )
+        description_parts.append(f"\n**Course Duration:** {course_duration}\n")
 
     if target_audience:
-        description_parts.append(
-            f"\n**Target Audience:** {target_audience}\n"
-        )
+        description_parts.append(f"\n**Target Audience:** {target_audience}\n")
 
     description_parts.append(
         "\n\nThe syllabus must be designed according to **backward design** "
@@ -218,12 +211,8 @@ def create_syllabus_generation_task(
     description = (
         "".join(description_parts)
         .replace("_HUMANICS_EMBEDDING_MANDATE_", _HUMANICS_EMBEDDING_MANDATE)
-        .replace(
-            "_EXPERIENTIAL_LEARNING_MANDATE_", _EXPERIENTIAL_LEARNING_MANDATE
-        )
-        .replace(
-            "_MARKDOWN_STRUCTURE_REQUIREMENT_", _MARKDOWN_STRUCTURE_REQUIREMENT
-        )
+        .replace("_EXPERIENTIAL_LEARNING_MANDATE_", _EXPERIENTIAL_LEARNING_MANDATE)
+        .replace("_MARKDOWN_STRUCTURE_REQUIREMENT_", _MARKDOWN_STRUCTURE_REQUIREMENT)
     )
 
     # ---- Build the expected_output --------------------------------------
@@ -272,6 +261,8 @@ def create_syllabus_generation_task(
         output_file=output_file,
         async_execution=False,
     )
+
+
 # ---------------------------------------------------------------------------
 # Self-test
 # ---------------------------------------------------------------------------

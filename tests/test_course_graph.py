@@ -81,6 +81,8 @@ def sample_graph(sample_spec: CourseSpecification) -> CourseGraph:
             ),
         ],
     )
+
+
 # ===================================================================
 # 1. ModuleSummary schema tests
 # ===================================================================
@@ -159,6 +161,7 @@ class TestModuleSummary:
         assert props["duration_weeks"]["minimum"] == 0.0
         assert props["topics"]["type"] == "array"
 
+
 # ===================================================================
 # 2. CourseGraph schema tests
 # ===================================================================
@@ -199,9 +202,7 @@ class TestCourseGraph:
         with pytest.raises(ValidationError):
             CourseGraph(specification=sample_spec)
 
-    def test_empty_course_slug_is_invalid(
-        self, sample_spec: CourseSpecification
-    ) -> None:
+    def test_empty_course_slug_is_invalid(self, sample_spec: CourseSpecification) -> None:
         """course_slug must be non-empty."""
         with pytest.raises(ValidationError):
             CourseGraph(specification=sample_spec, course_slug="")
@@ -212,14 +213,11 @@ class TestCourseGraph:
         assert "T" in graph.generated_at
         assert graph.generated_at.endswith("Z")
         import datetime
-        dt = datetime.datetime.strptime(
-            graph.generated_at, "%Y-%m-%dT%H:%M:%SZ"
-        )
+
+        dt = datetime.datetime.strptime(graph.generated_at, "%Y-%m-%dT%H:%M:%SZ")
         assert isinstance(dt, datetime.datetime)
 
-    def test_generated_at_can_be_overridden(
-        self, sample_spec: CourseSpecification
-    ) -> None:
+    def test_generated_at_can_be_overridden(self, sample_spec: CourseSpecification) -> None:
         """generated_at can be set explicitly."""
         graph = CourseGraph(
             specification=sample_spec,
@@ -249,9 +247,7 @@ class TestCourseGraphRoundTrip:
         assert restored.generated_at == sample_graph.generated_at
         assert len(restored.modules) == len(sample_graph.modules)
 
-        assert restored.specification.course_context == (
-            sample_graph.specification.course_context
-        )
+        assert restored.specification.course_context == (sample_graph.specification.course_context)
         assert restored.specification.primary_language == (
             sample_graph.specification.primary_language
         )
@@ -267,17 +263,19 @@ class TestCourseGraphRoundTrip:
         assert isinstance(json_str, str)
         restored = CourseGraph.model_validate_json(json_str)
         assert restored.course_slug == sample_graph.course_slug
-        assert (
-            restored.specification.course_context
-            == sample_graph.specification.course_context
-        )
+        assert restored.specification.course_context == sample_graph.specification.course_context
 
     def test_json_structure_matches_schema(self, sample_graph: CourseGraph) -> None:
         """The JSON output contains all expected keys at the top level."""
         data = json.loads(sample_graph.model_dump_json())
         expected_keys = {
-            "specification", "course_slug", "learning_objectives",
-            "key_concepts", "prerequisites", "modules", "generated_at",
+            "specification",
+            "course_slug",
+            "learning_objectives",
+            "key_concepts",
+            "prerequisites",
+            "modules",
+            "generated_at",
         }
         assert set(data.keys()) == expected_keys
         spec = data["specification"]
@@ -313,9 +311,7 @@ class TestCourseGraphComposition:
         """The specification field exists as a composition field."""
         assert "specification" in CourseGraph.model_fields
 
-    def test_specification_is_not_duplicated_in_json(
-        self, sample_graph: CourseGraph
-    ) -> None:
+    def test_specification_is_not_duplicated_in_json(self, sample_graph: CourseGraph) -> None:
         """JSON output nests spec fields under specification, not top level."""
         data = json.loads(sample_graph.model_dump_json())
         for key in ("course_context", "primary_language"):
@@ -344,30 +340,33 @@ class TestExportCourseGraphCommand:
     def test_export_course_graph_writes_json(self) -> None:
         """The command writes a valid course_graph.json file."""
         tool = OutputExportTool(force=True)
-        result_str = tool._handle_export_course_graph({
-            "command": "export-course-graph",
-            "course_name": "Test Course",
-            "course_slug": "test-course",
-            "specification": {
-                "course_context": "A test course context.",
-                "primary_language": "Rust",
-            },
-            "learning_objectives": ["Learn Rust", "Build CLI tools"],
-            "key_concepts": ["ownership", "borrowing"],
-            "prerequisites": ["Basic programming"],
-            "modules": [{
-                "title": "Getting Started",
-                "duration_weeks": 1.0,
-                "hours_per_week": 3.0,
-                "topics": ["cargo", "hello world"],
-            }],
-            "run_id": "2026-08-23_120000_test-course",
-        })
+        result_str = tool._handle_export_course_graph(
+            {
+                "command": "export-course-graph",
+                "course_name": "Test Course",
+                "course_slug": "test-course",
+                "specification": {
+                    "course_context": "A test course context.",
+                    "primary_language": "Rust",
+                },
+                "learning_objectives": ["Learn Rust", "Build CLI tools"],
+                "key_concepts": ["ownership", "borrowing"],
+                "prerequisites": ["Basic programming"],
+                "modules": [
+                    {
+                        "title": "Getting Started",
+                        "duration_weeks": 1.0,
+                        "hours_per_week": 3.0,
+                        "topics": ["cargo", "hello world"],
+                    }
+                ],
+                "run_id": "2026-08-23_120000_test-course",
+            }
+        )
         result = json.loads(result_str)
         assert result["status"] == "ok"
         graph_path = (
-            self.tmp_root / "output" / "2026-08-23_120000_test-course"
-            / "course_graph.json"
+            self.tmp_root / "output" / "2026-08-23_120000_test-course" / "course_graph.json"
         )
         assert graph_path.exists()
         data = json.loads(graph_path.read_text())
@@ -379,15 +378,17 @@ class TestExportCourseGraphCommand:
     def test_export_without_run_id_writes_to_output_root(self) -> None:
         """Without run_id, writes to output/course_graph.json directly."""
         tool = OutputExportTool(force=True)
-        result_str = tool._handle_export_course_graph({
-            "command": "export-course-graph",
-            "course_name": "Test",
-            "course_slug": "test",
-            "specification": {
-                "course_context": "Context.",
-                "primary_language": "Go",
-            },
-        })
+        result_str = tool._handle_export_course_graph(
+            {
+                "command": "export-course-graph",
+                "course_name": "Test",
+                "course_slug": "test",
+                "specification": {
+                    "course_context": "Context.",
+                    "primary_language": "Go",
+                },
+            }
+        )
         result = json.loads(result_str)
         assert result["status"] == "ok"
         graph_path = self.tmp_root / "output" / "course_graph.json"
@@ -396,11 +397,13 @@ class TestExportCourseGraphCommand:
     def test_export_missing_course_name_returns_error(self) -> None:
         """Missing course_name returns error."""
         tool = OutputExportTool()
-        result_str = tool._handle_export_course_graph({
-            "command": "export-course-graph",
-            "course_slug": "test",
-            "specification": {"course_context": "x", "primary_language": "Py"},
-        })
+        result_str = tool._handle_export_course_graph(
+            {
+                "command": "export-course-graph",
+                "course_slug": "test",
+                "specification": {"course_context": "x", "primary_language": "Py"},
+            }
+        )
         result = json.loads(result_str)
         assert result["status"] == "error"
         assert "course_name" in result["message"]
@@ -408,11 +411,13 @@ class TestExportCourseGraphCommand:
     def test_export_missing_course_slug_returns_error(self) -> None:
         """Missing course_slug returns error."""
         tool = OutputExportTool()
-        result_str = tool._handle_export_course_graph({
-            "command": "export-course-graph",
-            "course_name": "Test",
-            "specification": {"course_context": "x", "primary_language": "Py"},
-        })
+        result_str = tool._handle_export_course_graph(
+            {
+                "command": "export-course-graph",
+                "course_name": "Test",
+                "specification": {"course_context": "x", "primary_language": "Py"},
+            }
+        )
         result = json.loads(result_str)
         assert result["status"] == "error"
         assert "course_slug" in result["message"]
@@ -420,11 +425,13 @@ class TestExportCourseGraphCommand:
     def test_export_missing_specification_returns_error(self) -> None:
         """Missing specification returns error."""
         tool = OutputExportTool()
-        result_str = tool._handle_export_course_graph({
-            "command": "export-course-graph",
-            "course_name": "Test",
-            "course_slug": "test",
-        })
+        result_str = tool._handle_export_course_graph(
+            {
+                "command": "export-course-graph",
+                "course_name": "Test",
+                "course_slug": "test",
+            }
+        )
         result = json.loads(result_str)
         assert result["status"] == "error"
         assert "specification" in result["message"]
@@ -432,25 +439,29 @@ class TestExportCourseGraphCommand:
     def test_export_invalid_specification_returns_error(self) -> None:
         """Invalid specification dict returns error."""
         tool = OutputExportTool()
-        result_str = tool._handle_export_course_graph({
-            "command": "export-course-graph",
-            "course_name": "Test",
-            "course_slug": "test",
-            "specification": {"wrong_field": True},
-        })
+        result_str = tool._handle_export_course_graph(
+            {
+                "command": "export-course-graph",
+                "course_name": "Test",
+                "course_slug": "test",
+                "specification": {"wrong_field": True},
+            }
+        )
         result = json.loads(result_str)
         assert result["status"] == "error"
 
     def test_export_invalid_module_returns_error(self) -> None:
         """An invalid module entry returns error."""
         tool = OutputExportTool()
-        result_str = tool._handle_export_course_graph({
-            "command": "export-course-graph",
-            "course_name": "Test",
-            "course_slug": "test",
-            "specification": {"course_context": "x", "primary_language": "Py"},
-            "modules": [{"title": "Missing duration"}],
-        })
+        result_str = tool._handle_export_course_graph(
+            {
+                "command": "export-course-graph",
+                "course_name": "Test",
+                "course_slug": "test",
+                "specification": {"course_context": "x", "primary_language": "Py"},
+                "modules": [{"title": "Missing duration"}],
+            }
+        )
         result = json.loads(result_str)
         assert result["status"] == "error"
         assert "Invalid module" in result["message"]
@@ -458,16 +469,18 @@ class TestExportCourseGraphCommand:
     def test_export_empty_lists_are_accepted(self) -> None:
         """Empty lists for optional fields work fine."""
         tool = OutputExportTool(force=True)
-        result_str = tool._handle_export_course_graph({
-            "command": "export-course-graph",
-            "course_name": "Test",
-            "course_slug": "test",
-            "specification": {"course_context": "x", "primary_language": "Py"},
-            "learning_objectives": [],
-            "key_concepts": [],
-            "prerequisites": [],
-            "modules": [],
-        })
+        result_str = tool._handle_export_course_graph(
+            {
+                "command": "export-course-graph",
+                "course_name": "Test",
+                "course_slug": "test",
+                "specification": {"course_context": "x", "primary_language": "Py"},
+                "learning_objectives": [],
+                "key_concepts": [],
+                "prerequisites": [],
+                "modules": [],
+            }
+        )
         result = json.loads(result_str)
         assert result["status"] == "ok"
 
@@ -485,21 +498,16 @@ class TestManifestCourseGraphIntegration:
         """Redirect output to tmp_path for isolated testing."""
         import src.exporters.file_writer as fw_module
         import src.exporters.manifest as manifest_module
+
         monkeypatch.setattr(fw_module, "_PROJECT_ROOT", tmp_path)
-        monkeypatch.setattr(
-            fw_module, "OUTPUT_PATHS", OutputPathConfig(root=tmp_path)
-        )
+        monkeypatch.setattr(fw_module, "OUTPUT_PATHS", OutputPathConfig(root=tmp_path))
         monkeypatch.setattr(manifest_module, "_PROJECT_ROOT", tmp_path)
         (tmp_path / "output").mkdir(exist_ok=True)
         self.tmp_root = tmp_path
 
-    def test_course_graph_written_alongside_readme(
-        self, sample_graph: CourseGraph
-    ) -> None:
+    def test_course_graph_written_alongside_readme(self, sample_graph: CourseGraph) -> None:
         """When course_graph is provided, it is written alongside README."""
-        readme_path = update_output_manifest(
-            course_name="Test Course", course_graph=sample_graph
-        )
+        readme_path = update_output_manifest(course_name="Test Course", course_graph=sample_graph)
         assert readme_path.exists()
         assert readme_path.name == "README.md"
         graph_path = readme_path.parent / "course_graph.json"
@@ -536,21 +544,18 @@ class TestModelImports:
     def test_models_importable_from_src_models(self) -> None:
         """CourseGraph and ModuleSummary importable from src.models."""
         from src.models import CourseGraph, ModuleSummary
+
         assert CourseGraph is not None
         assert ModuleSummary is not None
 
     def test_course_specification_importable_from_main(self) -> None:
         """CourseSpecification remains importable from src.main."""
-        spec = CourseSpecification(
-            course_context="test", primary_language="Python"
-        )
+        spec = CourseSpecification(course_context="test", primary_language="Python")
         assert spec.course_context == "test"
 
     def test_course_graph_composes_course_spec(self) -> None:
         """CourseGraph constructed with CourseSpecification from main."""
-        spec = CourseSpecification(
-            course_context="test context", primary_language="Go"
-        )
+        spec = CourseSpecification(course_context="test context", primary_language="Go")
         graph = CourseGraph(specification=spec, course_slug="test-go")
         assert graph.specification == spec
 
@@ -566,23 +571,16 @@ class TestHoursPerWeek:
     def test_hours_per_week_is_required(self) -> None:
         """hours_per_week must be provided."""
         with pytest.raises(ValidationError):
-            ModuleSummary(
-                title="Test", duration_weeks=1.0, topics=["a"]
-            )
+            ModuleSummary(title="Test", duration_weeks=1.0, topics=["a"])
 
     def test_negative_hours_is_invalid(self) -> None:
         """hours_per_week must be >= 0."""
         with pytest.raises(ValidationError):
-            ModuleSummary(
-                title="Test", duration_weeks=1.0,
-                hours_per_week=-1.0, topics=["a"]
-            )
+            ModuleSummary(title="Test", duration_weeks=1.0, hours_per_week=-1.0, topics=["a"])
 
     def test_zero_hours_is_valid(self) -> None:
         """Zero hours (e.g. self-study module) is allowed."""
-        m = ModuleSummary(
-            title="Self-Study", duration_weeks=1.0, hours_per_week=0.0
-        )
+        m = ModuleSummary(title="Self-Study", duration_weeks=1.0, hours_per_week=0.0)
         assert m.hours_per_week == 0.0
 
     def test_high_hours_allowed(self) -> None:
@@ -598,15 +596,15 @@ class TestHoursPerWeek:
     def test_total_effort_calculable(self) -> None:
         """Total effort = duration_weeks * hours_per_week."""
         m = ModuleSummary(
-            title="Full Module", duration_weeks=3.0, hours_per_week=4.0,
+            title="Full Module",
+            duration_weeks=3.0,
+            hours_per_week=4.0,
             topics=["a", "b", "c"],
         )
         total = m.duration_weeks * m.hours_per_week
         assert total == 12.0
 
-    def test_roundtrip_preserves_hours_per_week(
-        self, sample_module: ModuleSummary
-    ) -> None:
+    def test_roundtrip_preserves_hours_per_week(self, sample_module: ModuleSummary) -> None:
         """hours_per_week survives serialization/deserialization."""
         data = sample_module.model_dump()
         restored = ModuleSummary.model_validate(data)

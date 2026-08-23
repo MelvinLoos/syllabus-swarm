@@ -161,7 +161,7 @@ _DIRECTORY_STRUCTURE_REQUIREMENT: str = (
     "**Key rules:**\n"
     "- Every lab directory (starter and solution) MUST contain a README.md.\n"
     "- Starter files MUST contain `# TODO:` markers — at least 3 per file —\n"
-    "  that a student can search for with `grep -r \"TODO\"`.  Each TODO must\n"
+    '  that a student can search for with `grep -r "TODO"`.  Each TODO must\n'
     "  be a concrete, actionable instruction (never a placeholder).\n"
     "- Solution files MUST be complete, runnable, and thoroughly commented\n"
     "  so a self-study learner can understand every line.\n"
@@ -244,7 +244,7 @@ _README_TEMPLATE_REQUIREMENT: str = (
     "## 📝 Lab Instructions\n"
     "# Step-by-step walkthrough of what to build.\n"
     "# In starter/ this is the main guide.\n"
-    "# In solution/ add a \"Solution Walkthrough\" sub-section.\n\n"
+    '# In solution/ add a "Solution Walkthrough" sub-section.\n\n'
     "## 🔍 Humanics Reflection  [H]\n"
     "# Prompts that ask the student to reflect on:\n"
     "# - How does this code impact people?\n"
@@ -296,7 +296,7 @@ _CODE_QUALITY_MANDATE: str = (
     "- TODO markers must follow the format: `# TODO(<tier>): <actionable "
     "instruction>` — e.g. `# TODO(t1): Implement the binary_search "
     "function to return -1 when the target is not found.`\n"
-    "- Never leave a TODO that says \"implement this\" without specifying "
+    '- Never leave a TODO that says "implement this" without specifying '
     "exactly *what* to implement and *how* to verify correctness.\n"
 )
 
@@ -315,8 +315,8 @@ _TOOL_USAGE_MANDATE: str = (
     "correct per-run directory and do NOT leak into the shared global "
     "output folder.\n"
     "2. Generate the labs for **Tier 1** first.  Call `output_export_tool` "
-    "with `command=\"write-labs\"`, passing `course_name`, `tier` "
-    "(e.g. `\"tier1_foundations\"`), `files` (a dict mapping relative "
+    'with `command="write-labs"`, passing `course_name`, `tier` '
+    '(e.g. `"tier1_foundations"`), `files` (a dict mapping relative '
     "paths to file contents), and the `run_id`.\n"
     "3. After Tier 1 files are written, move to **Tier 2** and repeat.\n"
     "4. After Tier 2, move to **Tier 3** and repeat.\n"
@@ -343,7 +343,7 @@ _TOOL_USAGE_MANDATE: str = (
     "**Do NOT** attempt to write all file contents inline in your final "
     "text response.  Use the tool for every file.  Your final text response "
     "must be a real, detailed top-level README index — NOT a placeholder "
-    "like \"No more tool calls\" or \"Just the final answer\".\n"
+    'like "No more tool calls" or "Just the final answer".\n'
 )
 
 # ---------------------------------------------------------------------------
@@ -478,14 +478,10 @@ def create_lab_generation_task(
         ctx = syllabus_context
         if len(ctx) > 4000:
             ctx = ctx[:4000] + "\n\n[... syllabus truncated for length ...]\n"
-        description_parts.append(
-            f"\n**Syllabus Context:**\n\n{ctx}\n"
-        )
+        description_parts.append(f"\n**Syllabus Context:**\n\n{ctx}\n")
 
     if topic_focus:
-        description_parts.append(
-            f"\n**Topic Focus:** {topic_focus}\n"
-        )
+        description_parts.append(f"\n**Topic Focus:** {topic_focus}\n")
 
     description_parts.append(
         f"\n\n{tier_scope}\n"
@@ -502,7 +498,7 @@ def create_lab_generation_task(
     if tier:
         expected_output = (
             f"## 🔴 CRITICAL: You MUST use the `output_export_tool`\n\n"
-            f"Use the `output_export_tool` with `command=\"write-labs\"` to "
+            f'Use the `output_export_tool` with `command="write-labs"` to '
             f"write ALL lab files for **{tier}** to disk.  Include at least "
             f"3 labs with starter/ and solution/ directories.\n\n"
             f"**Once all files are written**, produce a Markdown summary "

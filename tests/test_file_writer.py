@@ -74,7 +74,7 @@ class TestSanitizeFilename:
 
     def test_only_illegal_chars_returns_untitled(self) -> None:
         """A string composed entirely of illegal characters yields 'untitled'."""
-        result = _sanitize_filename("<>:\"/\\|?*")
+        result = _sanitize_filename('<>:"/\\|?*')
         assert result == "untitled"
 
     # -- Separator collapsing -------------------------------------------
@@ -360,10 +360,7 @@ class TestConvenienceHelpers:
         )
         assert path.exists()
         parts = path.relative_to(self._tmp)
-        expected = Path(
-            "output/labs/Data_Science_with_Python/"
-            "tier1_foundations/starter/lab1.py"
-        )
+        expected = Path("output/labs/Data_Science_with_Python/tier1_foundations/starter/lab1.py")
         assert parts == expected
 
     def test_write_lab_file_rejects_invalid_subfolder(self) -> None:
@@ -383,9 +380,7 @@ class TestConvenienceHelpers:
 
     def test_write_lab_file_sanitizes_filename(self) -> None:
         """The filename component is sanitised."""
-        path = write_lab_file(
-            "Course", "tier1", "starter", "bad?file:name.py", "content"
-        )
+        path = write_lab_file("Course", "tier1", "starter", "bad?file:name.py", "content")
         assert path.name == "bad-file-name.py"
 
     def test_write_syllabus_overwrite_protection(self) -> None:

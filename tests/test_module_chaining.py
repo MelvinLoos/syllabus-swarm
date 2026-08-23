@@ -52,8 +52,12 @@ def sample_graph(sample_spec: CourseSpecification) -> CourseGraph:
             "Build simple ML models with scikit-learn",
         ],
         key_concepts=[
-            "variables", "loops", "functions",
-            "pandas", "DataFrames", "scikit-learn",
+            "variables",
+            "loops",
+            "functions",
+            "pandas",
+            "DataFrames",
+            "scikit-learn",
         ],
         prerequisites=["Basic computer literacy"],
         modules=[
@@ -135,9 +139,7 @@ def empty_output_dir(
 class TestResolvePrerequisites:
     """Tests for the _resolve_prerequisites helper function."""
 
-    def test_resolves_from_matching_slug(
-        self, populated_output_dir: Path
-    ) -> None:
+    def test_resolves_from_matching_slug(self, populated_output_dir: Path) -> None:
         """Resolves prerequisites when a matching run directory exists."""
         result = _resolve_prerequisites("ML_Basics")
         assert "The students have already mastered" in result
@@ -147,31 +149,23 @@ class TestResolvePrerequisites:
         assert "**Key Concepts:**" in result
         assert "variables, loops, functions" in result
 
-    def test_partial_slug_matching(
-        self, populated_output_dir: Path
-    ) -> None:
+    def test_partial_slug_matching(self, populated_output_dir: Path) -> None:
         """A partial slug like 'Basics' matches the full directory name."""
         result = _resolve_prerequisites("Basics")
         assert "The students have already mastered" in result
 
-    def test_full_run_id_matching(
-        self, populated_output_dir: Path
-    ) -> None:
+    def test_full_run_id_matching(self, populated_output_dir: Path) -> None:
         """The full run ID also matches."""
         result = _resolve_prerequisites("2026-08-22_153000_ML_Basics")
         assert "The students have already mastered" in result
 
-    def test_empty_learning_objectives_and_concepts(
-        self, empty_output_dir: Path
-    ) -> None:
+    def test_empty_learning_objectives_and_concepts(self, empty_output_dir: Path) -> None:
         """When both lists are empty, a fallback message is returned."""
         result = _resolve_prerequisites("Empty_Course")
         assert "The students have already mastered" in result
         assert "No learning objectives or key concepts were recorded" in result
 
-    def test_result_does_not_contain_raw_json(
-        self, populated_output_dir: Path
-    ) -> None:
+    def test_result_does_not_contain_raw_json(self, populated_output_dir: Path) -> None:
         """The result is formatted text, not raw JSON."""
         result = _resolve_prerequisites("ML_Basics")
         assert "course_slug" not in result
@@ -208,9 +202,7 @@ class TestResolvePrerequisites:
     # Error cases
     # ----------------------------------------------------------------
 
-    def test_slug_not_found_exits(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_slug_not_found_exits(self, tmp_path: Path, monkeypatch) -> None:
         """SystemExit is raised when no directory matches the slug."""
         _setup_output_dir(tmp_path, monkeypatch)
         (tmp_path / "some_other_dir").mkdir()
@@ -218,9 +210,7 @@ class TestResolvePrerequisites:
         with pytest.raises(SystemExit):
             _resolve_prerequisites("NonExistentSlug")
 
-    def test_no_course_graph_json_exits(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_no_course_graph_json_exits(self, tmp_path: Path, monkeypatch) -> None:
         """SystemExit is raised when the directory exists but has no graph."""
         _setup_output_dir(tmp_path, monkeypatch)
 
@@ -231,29 +221,24 @@ class TestResolvePrerequisites:
         with pytest.raises(SystemExit):
             _resolve_prerequisites("No_Graph")
 
-    def test_malformed_json_exits(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_malformed_json_exits(self, tmp_path: Path, monkeypatch) -> None:
         """SystemExit is raised when course_graph.json is not valid JSON."""
         _setup_output_dir(tmp_path, monkeypatch)
 
         run_dir = tmp_path / "2026-08-22_153000_Bad_JSON"
         run_dir.mkdir(parents=True)
-        (run_dir / "course_graph.json").write_text(
-            "this is not json {{{", encoding="utf-8"
-        )
+        (run_dir / "course_graph.json").write_text("this is not json {{{", encoding="utf-8")
 
         with pytest.raises(SystemExit):
             _resolve_prerequisites("Bad_JSON")
 
-    def test_output_dir_not_found_exits(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_output_dir_not_found_exits(self, tmp_path: Path, monkeypatch) -> None:
         """SystemExit is raised when the output directory doesn't exist."""
         non_existent = tmp_path / "does_not_exist"
         _setup_output_dir(tmp_path, monkeypatch)
         # Override with non-existent path
         import src.main as main_module
+
         monkeypatch.setattr(main_module, "OUTPUT_ROOT", non_existent)
 
         with pytest.raises(SystemExit):
@@ -268,19 +253,14 @@ class TestResolvePrerequisites:
 class TestPrerequisiteFormatting:
     """Validate the exact format of the prerequisite context string."""
 
-    def test_contains_intro_sentence(
-        self, populated_output_dir: Path
-    ) -> None:
+    def test_contains_intro_sentence(self, populated_output_dir: Path) -> None:
         """The string starts with the intro sentence."""
         result = _resolve_prerequisites("ML_Basics")
         assert result.startswith(
-            "The students have already mastered the following from a "
-            "previous course:\n"
+            "The students have already mastered the following from a previous course:\n"
         )
 
-    def test_learning_objectives_are_bulleted(
-        self, populated_output_dir: Path
-    ) -> None:
+    def test_learning_objectives_are_bulleted(self, populated_output_dir: Path) -> None:
         """Each learning objective is a bullet point."""
         result = _resolve_prerequisites("ML_Basics")
         lines = result.split("\n")
@@ -299,9 +279,7 @@ class TestPrerequisiteFormatting:
         assert len(obj_lines) == 3
         assert obj_lines[0] == "- Write basic Python scripts"
 
-    def test_key_concepts_are_comma_separated(
-        self, populated_output_dir: Path
-    ) -> None:
+    def test_key_concepts_are_comma_separated(self, populated_output_dir: Path) -> None:
         """Key concepts are presented as a single comma-separated line."""
         result = _resolve_prerequisites("ML_Basics")
         assert "- variables, loops, functions, pandas, DataFrames, scikit-learn" in result
@@ -359,9 +337,7 @@ class TestPrerequisiteFormatting:
 class TestPrerequisiteInjection:
     """Verify prerequisites are injected into course_context correctly."""
 
-    def test_injection_prepends_to_context(
-        self, populated_output_dir: Path
-    ) -> None:
+    def test_injection_prepends_to_context(self, populated_output_dir: Path) -> None:
         """The prerequisite string is prepended to the course context."""
         prereq = _resolve_prerequisites("ML_Basics")
         original_context = "Course Name: Advanced ML\nTech Stack: Python, PyTorch"
@@ -374,9 +350,7 @@ class TestPrerequisiteInjection:
         context_pos = combined.index("Course Name: Advanced ML")
         assert prereq_pos < context_pos
 
-    def test_injection_preserves_original_context(
-        self, populated_output_dir: Path
-    ) -> None:
+    def test_injection_preserves_original_context(self, populated_output_dir: Path) -> None:
         """The original course context is unchanged after injection."""
         prereq = _resolve_prerequisites("ML_Basics")
         original_context = "Course Name: Advanced ML\nTech Stack: Python, PyTorch"
