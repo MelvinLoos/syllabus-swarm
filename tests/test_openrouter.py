@@ -24,8 +24,6 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # Constants mirrored from the original script
 # ---------------------------------------------------------------------------
@@ -107,7 +105,7 @@ class TestClientConstruction:
         with patch("openai.OpenAI") as mock_openai:
             from openai import OpenAI
 
-            client = OpenAI(
+            OpenAI(
                 api_key="sk-test",
                 base_url=OPENROUTER_BASE_URL,
             )
@@ -121,7 +119,7 @@ class TestClientConstruction:
         with patch("openai.OpenAI") as mock_openai:
             from openai import OpenAI
 
-            client = OpenAI(
+            OpenAI(
                 api_key="sk-or-v1-my-key",
                 base_url=OPENROUTER_BASE_URL,
             )

@@ -14,8 +14,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from crewai import Agent, LLM
+from crewai import LLM, Agent
 
 from src.agents.curriculum_architect import (
     create_curriculum_architect,
@@ -25,8 +24,20 @@ from src.agents.lab_developer import (
     create_lab_developer,
     get_lab_developer,
 )
-from src.llm_factory import CURRICULUM_ARCHITECT, LAB_DEVELOPER
-
+from src.agents.qa_reviewer import (
+    create_qa_reviewer,
+    get_qa_reviewer,
+)
+from src.agents.theory_instructor import (
+    create_theory_instructor,
+    get_theory_instructor,
+)
+from src.llm_factory import (
+    CURRICULUM_ARCHITECT,
+    LAB_DEVELOPER,
+    QA_REVIEWER,
+    THEORY_INSTRUCTOR,
+)
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -332,6 +343,153 @@ class TestCreateLabDeveloper:
 
 
 # ===================================================================
+# create_qa_reviewer
+# ===================================================================
+
+
+class TestCreateQaReviewer:
+    """Tests for the QA Reviewer agent factory."""
+
+    def test_role_contains_qa_reviewer(self, mock_llm: MagicMock) -> None:
+        """The agent's role identifies it as the QA Reviewer."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ) as mock_build:
+            agent = create_qa_reviewer()
+            assert "QA" in agent.role
+            assert "MBO4" in agent.role
+            mock_build.assert_called_once_with(QA_REVIEWER)
+
+    def test_goal_contains_verification(self, mock_llm: MagicMock) -> None:
+        """The goal references bug-free code and didactic correctness."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_qa_reviewer()
+            assert "bug-free" in agent.goal.lower()
+            assert "didactically correct" in agent.goal.lower()
+
+    def test_goal_contains_technical_and_didactic_checks(self, mock_llm: MagicMock) -> None:
+        """The goal references both technical and didactic checks."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_qa_reviewer()
+            assert "Technical Correctness Check" in agent.goal
+            assert "Didactic & Clarity Check" in agent.goal
+
+    def test_backstory_mentions_mbo4(self, mock_llm: MagicMock) -> None:
+        """The backstory references MBO4 or vocational students."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_qa_reviewer()
+            assert "MBO4" in agent.backstory
+
+    def test_backstory_mentions_students(self, mock_llm: MagicMock) -> None:
+        """The backstory references students and their learning experience."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_qa_reviewer()
+            assert "student" in agent.backstory.lower()
+
+    def test_allow_delegation_is_true(self, mock_llm: MagicMock) -> None:
+        """The QA Reviewer MUST allow delegation to send fixes back to Lab Developer."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_qa_reviewer()
+            assert agent.allow_delegation is True
+
+    def test_max_iter_is_thirty(self, mock_llm: MagicMock) -> None:
+        """The agent has max_iter set to 30."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_qa_reviewer()
+            assert agent.max_iter == 30
+
+    def test_max_rpm_is_twenty(self, mock_llm: MagicMock) -> None:
+        """The agent has max_rpm set to 20."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_qa_reviewer()
+            assert agent.max_rpm == 20
+
+    def test_verbose_defaults_to_false(self, mock_llm: MagicMock) -> None:
+        """verbose is False by default."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_qa_reviewer()
+            assert agent.verbose is False
+
+    def test_verbose_can_be_enabled(self, mock_llm: MagicMock) -> None:
+        """verbose can be set to True."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_qa_reviewer(verbose=True)
+            assert agent.verbose is True
+
+    def test_explicit_llm_bypasses_factory(self, mock_llm: MagicMock) -> None:
+        """When an LLM is passed explicitly, the factory is not called."""
+        custom_llm = MagicMock(spec=LLM)
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent"
+        ) as mock_build:
+            agent = create_qa_reviewer(llm=custom_llm)
+            assert agent.llm is custom_llm
+            mock_build.assert_not_called()
+
+    def test_has_file_read_tools(self, mock_llm: MagicMock) -> None:
+        """The agent is equipped with DirectoryReadTool, FileReadTool, and OutputExportTool."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_qa_reviewer()
+            tool_names = [t.name for t in agent.tools]
+            assert "List files in directory" in tool_names
+            assert "Read a file's content" in tool_names
+            assert "output_export_tool" in tool_names
+
+    def test_output_export_tool_has_force_enabled(self, mock_llm: MagicMock) -> None:
+        """The OutputExportTool is instantiated with force=True for overwrites."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_qa_reviewer()
+            export_tool = next(
+                t for t in agent.tools if t.name == "output_export_tool"
+            )
+            assert export_tool.force is True
+
+    def test_goal_mentions_delegation(self, mock_llm: MagicMock) -> None:
+        """The goal explicitly mentions delegation back to the Lab Developer."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_qa_reviewer()
+            assert "Delegation" in agent.goal
+            assert "Lab & Project Developer" in agent.goal
+
+
+# ===================================================================
 # Module singletons
 # ===================================================================
 
@@ -391,3 +549,182 @@ class TestModuleSingletons:
             a1 = get_lab_developer()
             a2 = get_lab_developer()
             assert a1 is a2
+
+    def test_get_qa_reviewer_returns_agent(self, mock_llm: MagicMock) -> None:
+        """get_qa_reviewer returns a valid Agent."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            import src.agents.qa_reviewer as qa
+            qa._qa_reviewer_instance = None
+
+            agent = get_qa_reviewer()
+            assert isinstance(agent, Agent)
+            assert "QA" in agent.role
+
+    def test_get_qa_reviewer_is_idempotent(self, mock_llm: MagicMock) -> None:
+        """Calling get_qa_reviewer twice returns the same instance."""
+        with patch(
+            "src.agents.qa_reviewer.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            import src.agents.qa_reviewer as qa
+            qa._qa_reviewer_instance = None
+
+            a1 = get_qa_reviewer()
+            a2 = get_qa_reviewer()
+            assert a1 is a2
+
+    def test_get_theory_instructor_returns_agent(self, mock_llm: MagicMock) -> None:
+        """get_theory_instructor returns a valid Agent."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            import src.agents.theory_instructor as ti
+            ti._theory_instructor_instance = None
+
+            agent = get_theory_instructor()
+            assert isinstance(agent, Agent)
+            assert "Theory Instructor" in agent.role
+
+    def test_get_theory_instructor_is_idempotent(self, mock_llm: MagicMock) -> None:
+        """Calling get_theory_instructor twice returns the same instance."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            import src.agents.theory_instructor as ti
+            ti._theory_instructor_instance = None
+
+            a1 = get_theory_instructor()
+            a2 = get_theory_instructor()
+            assert a1 is a2
+
+
+# ===================================================================
+# create_theory_instructor
+# ===================================================================
+
+
+class TestCreateTheoryInstructor:
+    """Tests for the Theory Instructor agent factory."""
+
+    def test_role_contains_theory_instructor(self, mock_llm: MagicMock) -> None:
+        """The agent's role identifies it as the Theory Instructor."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ) as mock_build:
+            agent = create_theory_instructor()
+            assert "Theory Instructor" in agent.role
+            mock_build.assert_called_once_with(THEORY_INSTRUCTOR)
+
+    def test_goal_contains_multi_format_toolkit(self, mock_llm: MagicMock) -> None:
+        """The goal references the Multi-Format Toolkit (HTML, terminal, Mermaid)."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_theory_instructor()
+            assert "HTML" in agent.goal
+            assert "Terminal" in agent.goal
+            assert "Mermaid" in agent.goal
+
+    def test_backstory_mentions_mbo4(self, mock_llm: MagicMock) -> None:
+        """The backstory references MBO4 vocational education."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_theory_instructor()
+            assert "MBO4" in agent.backstory
+
+    def test_backstory_mentions_formats(self, mock_llm: MagicMock) -> None:
+        """The backstory references Format A, B, and C."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_theory_instructor()
+            assert "Format A" in agent.backstory
+            assert "Format B" in agent.backstory
+            assert "Format C" in agent.backstory
+
+    def test_allow_delegation_is_false(self, mock_llm: MagicMock) -> None:
+        """The agent does not allow delegation."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_theory_instructor()
+            assert agent.allow_delegation is False
+
+    def test_max_iter_is_thirty(self, mock_llm: MagicMock) -> None:
+        """The agent has max_iter set to 30."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_theory_instructor()
+            assert agent.max_iter == 30
+
+    def test_max_rpm_is_twenty(self, mock_llm: MagicMock) -> None:
+        """The agent has max_rpm set to 20."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_theory_instructor()
+            assert agent.max_rpm == 20
+
+    def test_verbose_defaults_to_false(self, mock_llm: MagicMock) -> None:
+        """verbose is False by default."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_theory_instructor()
+            assert agent.verbose is False
+
+    def test_verbose_can_be_enabled(self, mock_llm: MagicMock) -> None:
+        """verbose can be set to True."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_theory_instructor(verbose=True)
+            assert agent.verbose is True
+
+    def test_explicit_llm_bypasses_factory(self, mock_llm: MagicMock) -> None:
+        """When an LLM is passed explicitly, the factory is not called."""
+        custom_llm = MagicMock(spec=LLM)
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent"
+        ) as mock_build:
+            agent = create_theory_instructor(llm=custom_llm)
+            assert agent.llm is custom_llm
+            mock_build.assert_not_called()
+
+    def test_has_output_export_tool(self, mock_llm: MagicMock) -> None:
+        """The agent is equipped with the OutputExportTool for file writing."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_theory_instructor()
+            tool_names = [t.name for t in agent.tools]
+            assert "output_export_tool" in tool_names
+
+    def test_output_export_tool_has_force_enabled(self, mock_llm: MagicMock) -> None:
+        """The OutputExportTool is instantiated with force=True for overwrites."""
+        with patch(
+            "src.agents.theory_instructor.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_theory_instructor()
+            export_tool = next(
+                t for t in agent.tools if t.name == "output_export_tool"
+            )
+            assert export_tool.force is True

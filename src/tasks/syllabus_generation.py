@@ -19,8 +19,6 @@ Markdown.  The task specification:
 
 from __future__ import annotations
 
-from typing import Optional
-
 from crewai import Agent, Task
 
 # ---------------------------------------------------------------------------
@@ -142,10 +140,10 @@ def create_syllabus_generation_task(
     *,
     course_name: str,
     agent: Agent,
-    course_context: Optional[str] = None,
-    course_description: Optional[str] = None,
-    course_duration: Optional[str] = None,
-    target_audience: Optional[str] = None,
+    course_context: str | None = None,
+    course_description: str | None = None,
+    course_duration: str | None = None,
+    target_audience: str | None = None,
     verbose: bool = False,
 ) -> Task:
     """Create a CrewAI Task that generates a Humanics-aligned syllabus.

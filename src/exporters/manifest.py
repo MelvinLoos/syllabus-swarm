@@ -31,12 +31,12 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from src.exporters.file_writer import (
     OUTPUT_PATHS,
-    write_file,
     _sanitize_filename,
+    write_file,
 )
 
 if TYPE_CHECKING:
@@ -82,11 +82,11 @@ class ManifestData:
 
     generated_at: str = field(
         default_factory=lambda: datetime.datetime.now(
-            tz=datetime.timezone.utc
+            tz=datetime.UTC
         ).strftime("%Y-%m-%d %H:%M:%S UTC")
     )
     course_name: str = ""
-    syllabus: Optional[ArtifactSummary] = None
+    syllabus: ArtifactSummary | None = None
     lab_tiers: list[ArtifactSummary] = field(default_factory=list)
     total_files: int = 0
     total_size_bytes: int = 0
@@ -243,10 +243,10 @@ def _format_size(num_bytes: int) -> str:
 def update_output_manifest(
     course_name: str = "",
     *,
-    syllabus_path: Optional[Path] = None,
-    labs_base_path: Optional[Path] = None,
-    rubrics_path: Optional[Path] = None,
-    course_graph: Optional[CourseGraph] = None,
+    syllabus_path: Path | None = None,
+    labs_base_path: Path | None = None,
+    rubrics_path: Path | None = None,
+    course_graph: CourseGraph | None = None,
 ) -> Path:
     """Scan the ``output/`` directory and write ``output/README.md``.
 
@@ -283,7 +283,7 @@ def update_output_manifest(
     total_files = sum(e.file_count for e in all_entries)
     total_bytes = sum(e.size_bytes for e in all_entries)
 
-    ts = datetime.datetime.now(tz=datetime.timezone.utc).strftime(
+    ts = datetime.datetime.now(tz=datetime.UTC).strftime(
         "%Y-%m-%d %H:%M:%S UTC"
     )
 

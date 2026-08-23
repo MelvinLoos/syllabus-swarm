@@ -34,10 +34,9 @@ Usage
 from __future__ import annotations
 
 import os
-from typing import Optional
 
-from dotenv import load_dotenv
 from crewai import LLM
+from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
 # Bootstrap environment — load .env so os.getenv picks up values.
@@ -57,6 +56,8 @@ CURRICULUM_ARCHITECT: str = "CURRICULUM_ARCHITECT"
 LAB_DEVELOPER: str = "LAB_DEVELOPER"
 OUTPUT_EXPORTER: str = "OUTPUT_EXPORTER"
 INTAKE_SPECIALIST: str = "INTAKE_SPECIALIST"
+QA_REVIEWER: str = "QA_REVIEWER"
+THEORY_INSTRUCTOR: str = "THEORY_INSTRUCTOR"
 
 # All known agent roles (used by list_agent_configs).
 _KNOWN_ROLES: tuple[str, ...] = (
@@ -64,6 +65,8 @@ _KNOWN_ROLES: tuple[str, ...] = (
     LAB_DEVELOPER,
     OUTPUT_EXPORTER,
     INTAKE_SPECIALIST,
+    QA_REVIEWER,
+    THEORY_INSTRUCTOR,
 )
 
 # ---------------------------------------------------------------------------
@@ -155,7 +158,7 @@ def _resolve_numeric(
 def build_llm_for_agent(
     agent_role: str,
     *,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
 ) -> LLM:
     """Build a ``crewai.LLM`` instance configured for a specific agent.
 

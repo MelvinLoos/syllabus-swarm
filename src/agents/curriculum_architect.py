@@ -25,10 +25,7 @@ other generation parameters are configured in one place
 
 from __future__ import annotations
 
-from typing import Optional
-
-from crewai import Agent
-from crewai import LLM
+from crewai import LLM, Agent
 
 from src.llm_factory import (
     CURRICULUM_ARCHITECT,
@@ -50,7 +47,7 @@ from src.llm_factory import (
 
 def create_curriculum_architect(
     *,
-    llm: Optional[LLM] = None,
+    llm: LLM | None = None,
     verbose: bool = False,
 ) -> Agent:
     """Create the Curriculum Architect CrewAI agent.
@@ -150,7 +147,7 @@ def create_curriculum_architect(
 # Module singleton
 # ---------------------------------------------------------------------------
 
-_architect_instance: Optional[Agent] = None
+_architect_instance: Agent | None = None
 
 
 def get_architect(*, verbose: bool = False) -> Agent:

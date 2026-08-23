@@ -36,9 +36,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Ensure the project root is on sys.path so that `from src.…` imports work
@@ -60,11 +59,10 @@ from pydantic import BaseModel, Field
 
 from src.agents.intake_specialist import get_intake_specialist
 from src.crews.syllabus_crew import (
-    CrewResult,
     OUTPUT_ROOT,
+    CrewResult,
     run_syllabus_crew,
 )
-
 
 # ---------------------------------------------------------------------------
 # Pydantic structured-output model for the Intake Specialist
@@ -93,26 +91,26 @@ class CourseSpecification(BaseModel):
         description="The exact programming language to be used for labs "
         "(e.g., 'JavaScript', 'Python', 'TypeScript', 'Java', 'Go', 'Rust')."
     )
-    grading_scale: Optional[str] = Field(
+    grading_scale: str | None = Field(
         default=None,
         description="The grading scale to use (e.g., 'OVG' for Dutch MBO "
         "Onvoldoende/Voldoende/Goed, '1-10', 'A-F').  When pre-populated "
         "from a profile, the Intake Specialist skips this question.",
     )
-    student_pathway: Optional[str] = Field(
+    student_pathway: str | None = Field(
         default=None,
         description="The student pathway: 'BOL' (school-based) or 'BBL' "
         "(work-based).  When pre-populated from a profile, the Intake "
         "Specialist skips this question.",
     )
-    year_level: Optional[int] = Field(
+    year_level: int | None = Field(
         default=None,
         ge=1,
         le=3,
         description="The student year level (1, 2, or 3).  When pre-populated "
         "from a profile, the Intake Specialist skips this question.",
     )
-    hardware_constraints: Optional[str] = Field(
+    hardware_constraints: str | None = Field(
         default=None,
         description="Description of hardware/device constraints (e.g., BYOD, "
         "Chromebooks, thin clients).  When pre-populated from a profile, "
@@ -316,7 +314,7 @@ def _load_profile(path: str) -> dict:
         )
         sys.exit(1)
 
-    if not profile_path.suffix.lower() in (".yaml", ".yml"):
+    if profile_path.suffix.lower() not in (".yaml", ".yml"):
         print(
             f"❌ Profile must be a .yaml or .yml file, got: {profile_path.suffix}",
             file=sys.stderr,
@@ -324,7 +322,7 @@ def _load_profile(path: str) -> dict:
         sys.exit(1)
 
     try:
-        with open(profile_path, "r", encoding="utf-8") as fh:
+        with open(profile_path, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
     except yaml.YAMLError as exc:
         print(f"❌ Invalid YAML in profile: {exc}", file=sys.stderr)
@@ -508,7 +506,7 @@ def _generate_run_id(course_safe_name: str) -> str:
 
     Format: ``YYYY-MM-DD_HHMMSS_<course_safe_name>``
     """
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
     return f"{timestamp}_{course_safe_name}"
 
 
@@ -624,8 +622,8 @@ def _run_intake(
     course_name: str,
     *,
     verbose: bool = False,
-    pre_populated: Optional[CourseSpecification] = None,
-    prerequisites: Optional[str] = None,
+    pre_populated: CourseSpecification | None = None,
+    prerequisites: str | None = None,
 ) -> tuple[str, str, str, str]:
     """Run the Intake Specialist to gather rich course context.
 
@@ -905,14 +903,14 @@ def _run_intake(
 def _print_summary(result: CrewResult, course_name: str) -> None:
     """Print a clear success/failure summary for both agents."""
     print(f"\n{'=' * 60}")
-    print(f"  🐝  Syllabus Swarm — Results Summary")
+    print("  🐝  Syllabus Swarm — Results Summary")
     print(f"  Course: {course_name}")
     print(f"{'=' * 60}")
 
     # ── Syllabus Agent ──────────────────────
     print()
     if result.syllabus_ok:
-        print(f"  ✅  Curriculum Architect  —  SUCCESS")
+        print("  ✅  Curriculum Architect  —  SUCCESS")
         print(f"      📄  Syllabus: {result.syllabus_path}")
         try:
             size = result.syllabus_path.stat().st_size
@@ -920,17 +918,17 @@ def _print_summary(result: CrewResult, course_name: str) -> None:
         except OSError:
             pass
     else:
-        print(f"  ❌  Curriculum Architect  —  FAILED")
+        print("  ❌  Curriculum Architect  —  FAILED")
         if result.syllabus_error:
             print(f"      ↳ {result.syllabus_error}")
 
     # ── Labs Agent ──────────────────────────
     if result.labs_ok:
-        print(f"  ✅  Lab & Project Developer  —  SUCCESS")
+        print("  ✅  Lab & Project Developer  —  SUCCESS")
         print(f"      📁  Labs:  {result.labs_base_path}/")
         _print_lab_tree(result.labs_base_path)
     else:
-        print(f"  ❌  Lab & Project Developer  —  FAILED")
+        print("  ❌  Lab & Project Developer  —  FAILED")
         if result.labs_error:
             print(f"      ↳ {result.labs_error}")
 
@@ -939,7 +937,7 @@ def _print_summary(result: CrewResult, course_name: str) -> None:
     if result.manifest_path and result.manifest_path.exists():
         print(f"  📋  Output Manifest: {result.manifest_path}")
     else:
-        print(f"  ⚠️   Output Manifest not generated.")
+        print("  ⚠️   Output Manifest not generated.")
 
     # ── Export summary ──────────────────────
     _print_export_summary(result)
@@ -947,12 +945,12 @@ def _print_summary(result: CrewResult, course_name: str) -> None:
     # ── Overall verdict ─────────────────────
     print()
     if result.all_succeeded:
-        print(f"  🎉  All agents completed successfully!")
+        print("  🎉  All agents completed successfully!")
     elif result.syllabus_ok:
-        print(f"  ⚠️   Syllabus generated but labs failed.")
+        print("  ⚠️   Syllabus generated but labs failed.")
     else:
-        print(f"  💥  Both agents failed.")
-        print(f"      Check OPENROUTER_API_KEY and network connectivity.")
+        print("  💥  Both agents failed.")
+        print("      Check OPENROUTER_API_KEY and network connectivity.")
     print(f"{'=' * 60}\n")
 
 
@@ -977,7 +975,7 @@ def _print_lab_tree(base: Path, indent: int = 6) -> None:
 def _print_export_summary(result: CrewResult) -> None:
     """Print a summary of what was exported and where."""
     print()
-    print(f"  ── What Was Exported ──")
+    print("  ── What Was Exported ──")
 
     # Syllabus
     if result.syllabus_path.exists():
@@ -1075,8 +1073,8 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     # --- 2. Load profile if provided --------------------------------------
-    profile_data: Optional[dict] = None
-    pre_populated: Optional[CourseSpecification] = None
+    profile_data: dict | None = None
+    pre_populated: CourseSpecification | None = None
     if profile_path:
         profile_data = _load_profile(profile_path)
         profile_name = profile_data.get("profile", {}).get("name", profile_path)
@@ -1118,9 +1116,9 @@ def main(argv: list[str] | None = None) -> None:
         primary_language = session.course_specification.primary_language
 
         print(f"\n{'=' * 60}")
-        print(f"  🐝  Syllabus Swarm")
+        print("  🐝  Syllabus Swarm")
         print(f"  Course:     {course_name}")
-        print(f"  Model:      Per-agent via OpenRouter (see .env.example)")
+        print("  Model:      Per-agent via OpenRouter (see .env.example)")
         print(f"  Labs:       {'Skip' if skip_labs else 'Generate'}")
         print(f"{'=' * 60}\n")
 
@@ -1181,16 +1179,16 @@ def main(argv: list[str] | None = None) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'=' * 60}")
-    print(f"  🐝  Syllabus Swarm")
+    print("  🐝  Syllabus Swarm")
     print(f"  Course:     {course_name}")
-    print(f"  Model:      Per-agent via OpenRouter (see .env.example)")
+    print("  Model:      Per-agent via OpenRouter (see .env.example)")
     if resume_dir:
         print(f"  Resume:     {resume_dir}")
     print(f"  Labs:       {'Skip' if skip_labs else 'Generate'}")
     print(f"{'=' * 60}\n")
 
     # --- Resolve prerequisites before intake (--builds-upon) -------------
-    prereq_context: Optional[str] = None
+    prereq_context: str | None = None
     if builds_upon:
         prereq_context = _resolve_prerequisites(builds_upon)
         print("📎  Resolved prerequisites from previous course.\n")
@@ -1251,7 +1249,7 @@ def main(argv: list[str] | None = None) -> None:
                 course_context=course_context,
                 primary_language=primary_language,
             ),
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             run_id=run_id,
         )
         session_path = run_dir / "intake_session.json"

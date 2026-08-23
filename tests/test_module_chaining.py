@@ -16,7 +16,6 @@ Validates:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -24,11 +23,8 @@ import pytest
 from src.main import (
     CourseSpecification,
     _resolve_prerequisites,
-    _sanitize_filename,
-    _generate_run_id,
 )
 from src.models import CourseGraph, ModuleSummary
-
 
 # ===================================================================
 # Fixtures
@@ -89,8 +85,8 @@ def _setup_output_dir(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
     """Redirect OUTPUT_ROOT in both main and syllabus_crew to tmp_path."""
-    import src.main as main_module
     import src.crews.syllabus_crew as sc_module
+    import src.main as main_module
 
     monkeypatch.setattr(main_module, "OUTPUT_ROOT", tmp_path)
     monkeypatch.setattr(sc_module, "OUTPUT_ROOT", tmp_path)

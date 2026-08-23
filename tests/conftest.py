@@ -11,9 +11,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from crewai import LLM
-
 
 # ---------------------------------------------------------------------------
 # Mock LLM — a MagicMock spec'd to crewai.LLM so tests never hit the network

@@ -4,38 +4,42 @@ syllabus_crew.py — Full Syllabus + Labs Orchestration Crew
 
 Issue #2: Core Agent — The Curriculum Architect (Humanics Alignment)
 Issue #3: Core Agent — The Lab & Project Developer (Tiered Coding Challenges)
+Issue #7: AI-Driven Feedback Loop — QA Reviewer Agent
 
-Wires together two agents into a sequential CrewAI Crew:
+Wires together three agents into a sequential CrewAI Crew:
   1. **Curriculum Architect** — generates a Humanics-aligned syllabus in
      Markdown and saves it to ``output/syllabus/<course_name>.md``.
   2. **Lab & Project Developer** — receives the syllabus as context and
      generates tiered coding labs saved to ``output/labs/<course_name>/``.
+  3. **QA Reviewer** — reviews all generated labs for technical correctness
+     and MBO4 didactic appropriateness.  Can delegate fixes back to the
+     Lab Developer via CrewAI's delegation mechanism.
 
-The crew runs sequentially so the Lab Developer can use the syllabus
-output as grounding context for designing relevant, scaffolded exercises.
+The crew runs sequentially so each agent can use the previous agent's
+output as grounding context.
 """
 
 from __future__ import annotations
 
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional, Tuple
 
 from crewai import Agent, Crew, Process
 
 from src.agents.curriculum_architect import get_architect
 from src.agents.lab_developer import get_lab_developer
-from src.tasks.syllabus_generation import create_syllabus_generation_task
-from src.tasks.lab_generation import create_lab_generation_task
+from src.agents.qa_reviewer import get_qa_reviewer
+from src.agents.theory_instructor import get_theory_instructor
 from src.exporters import (
-    write_syllabus,
-    write_file,
-    write_lab_file,
-    write_directory_tree,
     update_output_manifest,
+    write_file,
 )
+from src.tasks.lab_generation import create_lab_generation_task
+from src.tasks.qa_review import create_qa_review_task
+from src.tasks.syllabus_generation import create_syllabus_generation_task
+from src.tasks.theory_generation import create_theory_task
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -45,7 +49,7 @@ _PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
 OUTPUT_ROOT: Path = _PROJECT_ROOT / "output"
 
 # Tier names used for the lab directory scaffolding.
-_TIERS: list[Tuple[str, str]] = [
+_TIERS: list[tuple[str, str]] = [
     ("tier1_foundations", "Tier 1 — Foundations"),
     ("tier2_application", "Tier 2 — Application"),
     ("tier3_architecture", "Tier 3 — Architecture"),
@@ -102,7 +106,7 @@ def _create_lab_scaffolding(labs_base_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 class CrewResult:
-    """Holds the result of a full syllabus + labs crew run."""
+    """Holds the result of a full syllabus + theory + labs crew run."""
 
     def __init__(
         self,
@@ -112,7 +116,12 @@ class CrewResult:
         labs_ok: bool = True,
         syllabus_error: str | None = None,
         labs_error: str | None = None,
-        manifest_path: Optional[Path] = None,
+        manifest_path: Path | None = None,
+        qa_ok: bool = True,
+        qa_error: str | None = None,
+        qa_report: str | None = None,
+        theory_ok: bool = True,
+        theory_error: str | None = None,
     ) -> None:
         self.syllabus_path = syllabus_path
         self.labs_base_path = labs_base_path
@@ -121,10 +130,15 @@ class CrewResult:
         self.syllabus_error = syllabus_error
         self.labs_error = labs_error
         self.manifest_path = manifest_path
+        self.qa_ok = qa_ok
+        self.qa_error = qa_error
+        self.qa_report = qa_report
+        self.theory_ok = theory_ok
+        self.theory_error = theory_error
 
     @property
     def all_succeeded(self) -> bool:
-        return self.syllabus_ok and self.labs_ok
+        return self.syllabus_ok and self.theory_ok and self.labs_ok and self.qa_ok
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +151,7 @@ def _generate_run_id(course_safe_name: str) -> str:
 
     Format: ``YYYY-MM-DD_HHMMSS_<course_safe_name>``
     """
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
     return f"{timestamp}_{course_safe_name}"
 
 
@@ -262,18 +276,23 @@ def run_syllabus_crew(
     course_name: str = "",
     primary_language: str = "Python",
     verbose: bool = False,
-    architect_agent: Optional[Agent] = None,
-    lab_dev_agent: Optional[Agent] = None,
+    architect_agent: Agent | None = None,
+    lab_dev_agent: Agent | None = None,
+    skip_theory: bool = False,
     skip_labs: bool = False,
+    skip_qa: bool = False,
     resume_dir: str | Path | None = None,
     run_id: str | None = None,
 ) -> CrewResult:
-    """Run both agents sequentially and return a full result summary.
+    """Run all agents sequentially and return a full result summary.
 
     Execution order:
       1. Curriculum Architect generates a syllabus (or loads from disk if
          *resume_dir* is provided).
-      2. Lab & Project Developer processes the syllabus to generate tiered labs.
+      2. Theory Instructor generates interactive theory artifacts from the
+         syllabus.
+      3. Lab & Project Developer processes the syllabus to generate tiered labs.
+      4. QA Reviewer inspects all generated labs and delegates fixes if needed.
 
     All output is scoped under ``output/<run_id>/`` where *run_id* is a
     timestamp + course-slug combination, ensuring every pipeline run
@@ -298,8 +317,12 @@ def run_syllabus_crew(
         Pre-built Curriculum Architect agent; lazily created when None.
     lab_dev_agent : Agent or None
         Pre-built Lab Developer agent; lazily created when None.
+    skip_theory : bool
+        If True, skip the Theory Instructor step.
     skip_labs : bool
         If True, only run the Curriculum Architect (backward-compatible).
+    skip_qa : bool
+        If True, skip the QA review step.
     resume_dir : str, Path, or None
         Path to a previous run directory (e.g.
         ``output/2026-08-22_153000_Course_Name``). When provided, the
@@ -467,7 +490,54 @@ def run_syllabus_crew(
                 force=True,
             )
 
-    # ── 2. Lab & Project Developer ─────────────────────────────────────
+    # ── 2. Theory Instructor ───────────────────────────────────────────
+    theory_ok = False
+    theory_error: str | None = None
+
+    if skip_theory:
+        theory_ok = True
+    elif syllabus_raw:
+        try:
+            theory_instructor = get_theory_instructor(verbose=verbose)
+            theory_task = create_theory_task(
+                agent=theory_instructor,
+                course_name=course_name,
+                syllabus_context=syllabus_raw,
+                run_id=_active_run_id,
+                verbose=verbose,
+            )
+
+            theory_crew = Crew(
+                agents=[theory_instructor],
+                tasks=[theory_task],
+                process=Process.sequential,
+                verbose=verbose,
+            )
+            theory_result = theory_crew.kickoff()
+            theory_raw = (
+                theory_result.raw
+                if hasattr(theory_result, "raw")
+                else str(theory_result)
+            ).strip()
+
+            if theory_raw:
+                theory_ok = True
+                if verbose:
+                    print("  ✅  Theory artifacts generated successfully.")
+            else:
+                theory_error = "Theory Instructor produced no output."
+
+        except Exception as exc:
+            theory_error = str(exc)
+            if verbose:
+                print(f"  ❌  Theory generation failed: {exc}", file=sys.stderr)
+    else:
+        theory_error = (
+            "Skipped — Curriculum Architect produced no syllabus "
+            "to use as context."
+        )
+
+    # ── 3. Lab & Project Developer ─────────────────────────────────────
     labs_ok = False
     labs_error: str | None = None
 
@@ -563,7 +633,51 @@ def run_syllabus_crew(
                 force=True,
             )
 
-    # ── 3. Generate output manifest ────────────────────────────────────
+    # ── 4. QA Reviewer ─────────────────────────────────────────────────
+    qa_ok = False
+    qa_error: str | None = None
+    qa_report: str | None = None
+
+    if skip_qa or skip_labs or not labs_ok:
+        qa_ok = True  # Nothing to review, or explicitly skipped.
+    elif lab_dev is not None:
+        try:
+            qa_reviewer = get_qa_reviewer(verbose=verbose)
+            qa_task = create_qa_review_task(
+                agent=qa_reviewer,
+                course_name=course_name,
+                run_id=_active_run_id,
+                verbose=verbose,
+            )
+
+            # CRITICAL: Both agents must be in the SAME Crew array so
+            # the QA Reviewer can delegate fixes back to the Lab Developer.
+            qa_crew = Crew(
+                agents=[lab_dev, qa_reviewer],
+                tasks=[qa_task],
+                process=Process.sequential,
+                verbose=verbose,
+            )
+            qa_result = qa_crew.kickoff()
+            qa_report = (
+                qa_result.raw
+                if hasattr(qa_result, "raw")
+                else str(qa_result)
+            ).strip()
+
+            if qa_report:
+                qa_ok = True
+                if verbose:
+                    print("  ✅  QA Review completed.")
+            else:
+                qa_error = "QA Reviewer produced no output."
+
+        except Exception as exc:
+            qa_error = str(exc)
+            if verbose:
+                print(f"  ❌  QA Review failed: {exc}", file=sys.stderr)
+
+    # ── 5. Generate output manifest ────────────────────────────────────
     try:
         manifest_path = update_output_manifest(
             course_name,
@@ -575,7 +689,7 @@ def run_syllabus_crew(
             print(f"  [Warning] Manifest generation failed: {exc}", file=sys.stderr)
         manifest_path = None
 
-    # ── 4. Return combined result ──────────────────────────────────────
+    # ── 6. Return combined result ──────────────────────────────────────
     return CrewResult(
         syllabus_path=syllabus_path,
         labs_base_path=labs_base_path,
@@ -584,4 +698,9 @@ def run_syllabus_crew(
         syllabus_error=syllabus_error,
         labs_error=labs_error,
         manifest_path=manifest_path,
+        qa_ok=qa_ok,
+        qa_error=qa_error,
+        qa_report=qa_report,
+        theory_ok=theory_ok,
+        theory_error=theory_error,
     )

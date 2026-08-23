@@ -43,7 +43,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional, TypedDict
+from typing import TypedDict
 from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
@@ -55,13 +55,14 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.llm_factory import (
+    _DEFAULT_MODEL,
     CURRICULUM_ARCHITECT,
     LAB_DEVELOPER,
     OUTPUT_EXPORTER,
-    _DEFAULT_MODEL,
     build_llm_for_agent,
     get_effective_config,
 )
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -151,7 +152,7 @@ class _ModelsResponse(TypedDict):
 # ---------------------------------------------------------------------------
 
 
-def _fetch_openrouter_models() -> Optional[list[str]]:
+def _fetch_openrouter_models() -> list[str] | None:
     """Return a list of OpenRouter model IDs, or ``None`` on failure."""
     try:
         import requests  # type: ignore[import-untyped]
@@ -363,8 +364,8 @@ def run_smoke_test() -> bool:
         f"\n  {C.cyan('Test C:')} build_llm_for_agent() returns valid LLM objects"
     )
     print(
-        f"      (crewai.LLM may strip or keep the provider prefix depending "
-        f"on whether litellm is installed.)"
+        "      (crewai.LLM may strip or keep the provider prefix depending "
+        "on whether litellm is installed.)"
     )
 
     with patch.dict(os.environ, v2_env, clear=True):

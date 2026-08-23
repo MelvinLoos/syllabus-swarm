@@ -9,13 +9,10 @@ behaviour for pre-populated fields.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 import yaml
-
 from pydantic import ValidationError
 
 from src.main import (
@@ -145,13 +142,13 @@ class TestSchoolDefaultsYaml:
 
     def test_is_valid_yaml(self) -> None:
         """The file parses as valid YAML."""
-        with open(_SCHOOL_DEFAULTS, "r", encoding="utf-8") as fh:
+        with open(_SCHOOL_DEFAULTS, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         assert isinstance(data, dict)
 
     def test_has_organisation_section(self) -> None:
         """Contains an organisation section."""
-        with open(_SCHOOL_DEFAULTS, "r", encoding="utf-8") as fh:
+        with open(_SCHOOL_DEFAULTS, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         assert "organisation" in data
         org = data["organisation"]
@@ -160,7 +157,7 @@ class TestSchoolDefaultsYaml:
 
     def test_has_grading_scale_ovg(self) -> None:
         """The grading scale is OVG with O, V, G levels."""
-        with open(_SCHOOL_DEFAULTS, "r", encoding="utf-8") as fh:
+        with open(_SCHOOL_DEFAULTS, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         gs = data["grading_scale"]
         assert gs["type"] == "OVG"
@@ -169,7 +166,7 @@ class TestSchoolDefaultsYaml:
 
     def test_has_hardware_constraints(self) -> None:
         """Contains hardware_constraints with BYOD info."""
-        with open(_SCHOOL_DEFAULTS, "r", encoding="utf-8") as fh:
+        with open(_SCHOOL_DEFAULTS, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         hw = data["hardware_constraints"]
         assert "BYOD" in hw["student_device"]
@@ -177,7 +174,7 @@ class TestSchoolDefaultsYaml:
 
     def test_has_four_kerntaken(self) -> None:
         """Contains exactly 4 kerntaken: P1-K1 through P4-K1."""
-        with open(_SCHOOL_DEFAULTS, "r", encoding="utf-8") as fh:
+        with open(_SCHOOL_DEFAULTS, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         kt = data["kerntaken"]
         assert len(kt) == 4
@@ -186,7 +183,7 @@ class TestSchoolDefaultsYaml:
 
     def test_has_student_pathways(self) -> None:
         """Contains BOL and BBL pathway definitions."""
-        with open(_SCHOOL_DEFAULTS, "r", encoding="utf-8") as fh:
+        with open(_SCHOOL_DEFAULTS, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         sp = data["student_pathways"]
         assert "BOL" in sp
@@ -196,9 +193,11 @@ class TestSchoolDefaultsYaml:
 
     def test_has_year_levels(self) -> None:
         """Contains year levels 1, 2, 3."""
-        with open(_SCHOOL_DEFAULTS, "r", encoding="utf-8") as fh:
+        with open(_SCHOOL_DEFAULTS, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
-        yl = data["year_levels"]
+        assert 1 in data["year_levels"]
+        assert 2 in data["year_levels"]
+        assert 3 in data["year_levels"]
 # ===================================================================
 # YAML Parsing — program1_profile.yaml
 # ===================================================================
@@ -213,13 +212,13 @@ class TestProgram1ProfileYaml:
 
     def test_is_valid_yaml(self) -> None:
         """The file parses as valid YAML."""
-        with open(_PROGRAM1_PROFILE, "r", encoding="utf-8") as fh:
+        with open(_PROGRAM1_PROFILE, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         assert isinstance(data, dict)
 
     def test_has_profile_metadata(self) -> None:
         """Contains a profile section with name and description."""
-        with open(_PROGRAM1_PROFILE, "r", encoding="utf-8") as fh:
+        with open(_PROGRAM1_PROFILE, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         p = data["profile"]
         assert "name" in p
@@ -227,31 +226,31 @@ class TestProgram1ProfileYaml:
 
     def test_year_level_is_2(self) -> None:
         """Profile specifies year_level: 2."""
-        with open(_PROGRAM1_PROFILE, "r", encoding="utf-8") as fh:
+        with open(_PROGRAM1_PROFILE, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         assert data["year_level"] == 2
 
     def test_student_pathway_is_BOL(self) -> None:
         """Profile specifies student_pathway: BOL."""
-        with open(_PROGRAM1_PROFILE, "r", encoding="utf-8") as fh:
+        with open(_PROGRAM1_PROFILE, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         assert data["student_pathway"] == "BOL"
 
     def test_grading_scale_is_OVG(self) -> None:
         """Profile specifies grading_scale: OVG."""
-        with open(_PROGRAM1_PROFILE, "r", encoding="utf-8") as fh:
+        with open(_PROGRAM1_PROFILE, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         assert data["grading_scale"] == "OVG"
 
     def test_has_hardware_constraints(self) -> None:
         """Profile contains hardware_constraints string."""
-        with open(_PROGRAM1_PROFILE, "r", encoding="utf-8") as fh:
+        with open(_PROGRAM1_PROFILE, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         assert "BYOD" in data["hardware_constraints"]
 
     def test_tech_stack_has_php_laravel(self) -> None:
         """Tech stack specifies PHP and Laravel 11."""
-        with open(_PROGRAM1_PROFILE, "r", encoding="utf-8") as fh:
+        with open(_PROGRAM1_PROFILE, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         ts = data["tech_stack"]
         assert ts["primary_language"] == "PHP"
@@ -259,13 +258,13 @@ class TestProgram1ProfileYaml:
 
     def test_has_bpv_readiness(self) -> None:
         """Profile specifies bpv_readiness."""
-        with open(_PROGRAM1_PROFILE, "r", encoding="utf-8") as fh:
+        with open(_PROGRAM1_PROFILE, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         assert data["bpv_readiness"] == "bpv-ready"
 
     def test_has_kerntaken_emphasis(self) -> None:
         """Profile defines kerntaken emphasis for all four."""
-        with open(_PROGRAM1_PROFILE, "r", encoding="utf-8") as fh:
+        with open(_PROGRAM1_PROFILE, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         ke = data["kerntaken_emphasis"]
         assert "P1-K1" in ke
@@ -274,9 +273,10 @@ class TestProgram1ProfileYaml:
         assert "P4-K1" in ke
 
     def test_has_schedule_and_assessment(self) -> None:
-        """Profile contains schedule and assessment sections."""
-        with open(_PROGRAM1_PROFILE, "r", encoding="utf-8") as fh:
+        """Profile contains assessment section."""
+        with open(_PROGRAM1_PROFILE, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
+        assert "assessment" in data
 # ===================================================================
 # _load_profile — YAML loading with validation
 # ===================================================================

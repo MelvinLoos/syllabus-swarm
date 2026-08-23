@@ -17,10 +17,7 @@ The agent then synthesises the course name + user answers into a rich
 
 from __future__ import annotations
 
-from typing import Optional
-
-from crewai import Agent
-from crewai import LLM
+from crewai import LLM, Agent
 
 from src.llm_factory import (
     INTAKE_SPECIALIST,
@@ -34,7 +31,7 @@ from src.llm_factory import (
 
 def create_intake_specialist(
     *,
-    llm: Optional[LLM] = None,
+    llm: LLM | None = None,
     verbose: bool = False,
 ) -> Agent:
     """Create the MBO4 Curriculum Intake Specialist CrewAI agent.
@@ -124,7 +121,7 @@ def create_intake_specialist(
 # Module singleton
 # ---------------------------------------------------------------------------
 
-_intake_instance: Optional[Agent] = None
+_intake_instance: Agent | None = None
 
 
 def get_intake_specialist(*, verbose: bool = False) -> Agent:

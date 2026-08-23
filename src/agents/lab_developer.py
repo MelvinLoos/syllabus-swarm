@@ -29,16 +29,13 @@ per-agent fallback chain.
 
 from __future__ import annotations
 
-from typing import Optional
+from crewai import LLM, Agent
 
-from crewai import Agent
-from crewai import LLM
-
+from src.exporters.tool import OutputExportTool
 from src.llm_factory import (
     LAB_DEVELOPER,
     build_llm_for_agent,
 )
-from src.exporters.tool import OutputExportTool
 
 # ---------------------------------------------------------------------------
 # LLM configuration — delegated to the shared per-agent factory
@@ -53,7 +50,7 @@ from src.exporters.tool import OutputExportTool
 
 def create_lab_developer(
     *,
-    llm: Optional[LLM] = None,
+    llm: LLM | None = None,
     verbose: bool = False,
 ) -> Agent:
     """Create the Lab & Project Developer CrewAI agent.
@@ -139,7 +136,7 @@ def create_lab_developer(
 # Module singleton
 # ---------------------------------------------------------------------------
 
-_lab_dev_instance: Optional[Agent] = None
+_lab_dev_instance: Agent | None = None
 
 
 def get_lab_developer(*, verbose: bool = False) -> Agent:

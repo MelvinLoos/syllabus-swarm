@@ -16,21 +16,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
 
 import pytest
 from pydantic import ValidationError
 
+from src.exporters.file_writer import (
+    OutputPathConfig,
+)
+from src.exporters.manifest import update_output_manifest
+from src.exporters.tool import OutputExportTool
 from src.main import CourseSpecification
 from src.models import CourseGraph, ModuleSummary
-from src.exporters.tool import OutputExportTool
-from src.exporters.manifest import update_output_manifest
-from src.exporters.file_writer import (
-    OUTPUT_PATHS,
-    OutputPathConfig,
-    _sanitize_filename,
-)
-
 
 # ===================================================================
 # Fixtures
@@ -260,7 +256,7 @@ class TestCourseGraphRoundTrip:
             sample_graph.specification.primary_language
         )
 
-        for orig, rest in zip(sample_graph.modules, restored.modules):
+        for orig, rest in zip(sample_graph.modules, restored.modules, strict=False):
             assert rest.title == orig.title
             assert rest.duration_weeks == orig.duration_weeks
             assert rest.topics == orig.topics
@@ -337,8 +333,8 @@ class TestExportCourseGraphCommand:
     @pytest.fixture(autouse=True)
     def setup_tmp_root(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Redirect _PROJECT_ROOT in both tool.py and file_writer.py."""
-        import src.exporters.tool as tool_module
         import src.exporters.file_writer as fw_module
+        import src.exporters.tool as tool_module
 
         monkeypatch.setattr(tool_module, "_PROJECT_ROOT", tmp_path)
         monkeypatch.setattr(fw_module, "_PROJECT_ROOT", tmp_path)
@@ -487,8 +483,8 @@ class TestManifestCourseGraphIntegration:
     @pytest.fixture(autouse=True)
     def setup_output_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Redirect output to tmp_path for isolated testing."""
-        import src.exporters.manifest as manifest_module
         import src.exporters.file_writer as fw_module
+        import src.exporters.manifest as manifest_module
         monkeypatch.setattr(fw_module, "_PROJECT_ROOT", tmp_path)
         monkeypatch.setattr(
             fw_module, "OUTPUT_PATHS", OutputPathConfig(root=tmp_path)

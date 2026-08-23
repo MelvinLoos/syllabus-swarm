@@ -30,7 +30,7 @@ import re
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Project-root resolution
@@ -177,7 +177,7 @@ def _is_markdown_file(path: Path) -> bool:
 
 
 def _resolve_path(
-    path: Union[str, Path], *, must_be_under_root: bool = True
+    path: str | Path, *, must_be_under_root: bool = True
 ) -> Path:
     """Resolve *path* to an absolute ``Path`` and optionally enforce it
     lives under the project root.
@@ -239,7 +239,7 @@ def _validate_content(content: Any) -> str:
 
 
 def write_file(
-    path: Union[str, Path],
+    path: str | Path,
     content: Any,
     *,
     force: bool = False,
@@ -297,12 +297,12 @@ def write_file(
 
 
 def write_directory_tree(
-    base_path: Union[str, Path],
-    files_dict: Dict[str, Any],
+    base_path: str | Path,
+    files_dict: dict[str, Any],
     *,
     force: bool = False,
     encoding: str = "utf-8",
-) -> List[Path]:
+) -> list[Path]:
     """Write a batch of files from a ``{relative_path: content}`` mapping.
 
     This is the primary entry point for the exporter pipeline.  Callers
@@ -526,13 +526,13 @@ if __name__ == "__main__":
         try:
             write_file(dest, "new")
             print("   [FAIL] Should have raised FileWriteError")
-        except FileWriteError as exc:
-            print(f"   [OK]  Raised FileWriteError")
+        except FileWriteError:
+            print("   [OK]  Raised FileWriteError")
 
         # force overwrite
         p = write_file(dest, "overwritten", force=True)
         assert p.read_text() == "overwritten"
-        print(f"   [OK]  force=True overwrote successfully")
+        print("   [OK]  force=True overwrote successfully")
 
     # 4. write_directory_tree
     print("\n4. write_directory_tree:")

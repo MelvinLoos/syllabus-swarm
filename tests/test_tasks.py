@@ -17,7 +17,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ===================================================================
 # create_syllabus_generation_task
 # ===================================================================

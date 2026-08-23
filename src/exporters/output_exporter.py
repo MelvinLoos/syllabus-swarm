@@ -23,8 +23,6 @@ Public API
 
 from __future__ import annotations
 
-from typing import Optional
-
 from crewai import LLM
 
 from src.llm_factory import OUTPUT_EXPORTER, build_llm_for_agent
@@ -32,7 +30,7 @@ from src.llm_factory import OUTPUT_EXPORTER, build_llm_for_agent
 
 def build_output_exporter_llm(
     *,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
 ) -> LLM:
     """Build the Output Exporter's ``crewai.LLM`` via the shared factory.
 

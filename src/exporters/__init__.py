@@ -1,22 +1,20 @@
 """syllabus-swarm — exporters package."""
 
 from src.exporters.file_writer import (
+    OUTPUT_PATHS,
     FileWriteError,
     OutputPathConfig,
     write_directory_tree,
     write_file,
-    write_syllabus,
     write_lab_file,
     write_rubric,
-    OUTPUT_PATHS,
+    write_syllabus,
 )
-
 from src.exporters.manifest import (
     ArtifactSummary,
     ManifestData,
     update_output_manifest,
 )
-
 from src.exporters.output_exporter import (
     build_output_exporter_llm,
     get_output_exporter_llm,

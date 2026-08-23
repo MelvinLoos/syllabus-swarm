@@ -27,12 +27,10 @@ Public API
 from __future__ import annotations
 
 import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
 from src.main import CourseSpecification
-
 
 # ---------------------------------------------------------------------------
 # ModuleSummary
@@ -129,7 +127,7 @@ class CourseGraph(BaseModel):
     )
     generated_at: str = Field(
         default_factory=lambda: datetime.datetime.now(
-            tz=datetime.timezone.utc
+            tz=datetime.UTC
         ).strftime("%Y-%m-%dT%H:%M:%SZ"),
         description="ISO 8601 UTC timestamp when the graph was generated.",
     )

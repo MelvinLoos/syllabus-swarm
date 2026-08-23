@@ -25,8 +25,6 @@ course syllabus.  The task specification:
 
 from __future__ import annotations
 
-from typing import Optional
-
 from crewai import Agent, Task
 
 # ---------------------------------------------------------------------------
@@ -512,13 +510,13 @@ def create_lab_generation_task(
         )
     else:
         expected_output = (
-            f"## 🔴 CRITICAL: You MUST use the `output_export_tool`\n\n"
-            f"You have access to the `output_export_tool` with the `write-labs` "
-            f"command.  You MUST use this tool to generate and save the actual "
-            f"code files for Tier 1, Tier 2, and Tier 3 to disk.\n\n"
-            f"**Once all files are successfully written**, your FINAL textual "
-            f"response must be a complete, well-structured Markdown README that "
-            f"serves as the top-level index for all labs.\n"
+            "## 🔴 CRITICAL: You MUST use the `output_export_tool`\n\n"
+            "You have access to the `output_export_tool` with the `write-labs` "
+            "command.  You MUST use this tool to generate and save the actual "
+            "code files for Tier 1, Tier 2, and Tier 3 to disk.\n\n"
+            "**Once all files are successfully written**, your FINAL textual "
+            "response must be a complete, well-structured Markdown README that "
+            "serves as the top-level index for all labs.\n"
         )
 
     # ---- Compute the output file path -----------------------------------

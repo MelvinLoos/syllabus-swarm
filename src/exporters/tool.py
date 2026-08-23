@@ -53,23 +53,18 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from crewai.tools import BaseTool
 
 from src.exporters.file_writer import (
     OUTPUT_PATHS,
     FileWriteError,
-    OutputPathConfig,
-    _sanitize_filename,
     write_directory_tree,
     write_file,
-    write_lab_file,
     write_syllabus,
 )
 from src.exporters.manifest import (
-    ArtifactSummary,
-    ManifestData,
     update_output_manifest,
 )
 
@@ -85,7 +80,7 @@ _PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
 # ---------------------------------------------------------------------------
 
 
-def _ok(message: str, path: Optional[Union[str, Path]] = None) -> str:
+def _ok(message: str, path: str | Path | None = None) -> str:
     """Format a successful tool result string."""
     if path:
         return json.dumps({"status": "ok", "message": message, "path": str(path)})
@@ -173,7 +168,7 @@ class OutputExportTool(BaseTool):
             ``{"status": "error", "message": "..."}``.
         """
         # ── Normalise: accept a plain string or JSON-encoded dict ──────
-        parsed: Dict[str, Any]
+        parsed: dict[str, Any]
         if "command" not in kwargs:
             # CrewAI agents may pass a single JSON string as the first arg.
             raw = kwargs.get("input", kwargs.get("request_id", ""))
@@ -233,7 +228,7 @@ class OutputExportTool(BaseTool):
     # Command handlers
     # ------------------------------------------------------------------
 
-    def _handle_write_syllabus(self, params: Dict[str, Any]) -> str:
+    def _handle_write_syllabus(self, params: dict[str, Any]) -> str:
         """Write a syllabus Markdown file."""
         course_name = str(params.get("course_name", ""))
         if not course_name:
@@ -246,7 +241,7 @@ class OutputExportTool(BaseTool):
         path = write_syllabus(course_name, content, force=self.force)
         return _ok(f"Syllabus written for '{course_name}'.", path)
 
-    def _handle_write_labs(self, params: Dict[str, Any]) -> str:
+    def _handle_write_labs(self, params: dict[str, Any]) -> str:
         """Write a batch of lab files from a files-dict mapping.
 
         Files are written to one of two locations depending on whether
@@ -290,7 +285,7 @@ class OutputExportTool(BaseTool):
                 "Expected a dict of {relative_path: content}."
             )
 
-        files_dict: Dict[str, Any] = files_raw
+        files_dict: dict[str, Any] = files_raw
 
         if run_id:
             base = _PROJECT_ROOT / "output" / run_id / "labs" / tier
@@ -305,7 +300,7 @@ class OutputExportTool(BaseTool):
         )
 
     def _handle_generate_manifest(
-        self, params: Optional[Dict[str, Any]] = None
+        self, params: dict[str, Any] | None = None
     ) -> str:
         """Scan output/ and regenerate output/README.md."""
         if params is None:
@@ -314,7 +309,7 @@ class OutputExportTool(BaseTool):
         path = update_output_manifest(course_name=course_name)
         return _ok("Manifest regenerated.", path)
 
-    def _handle_export_course_graph(self, params: Dict[str, Any]) -> str:
+    def _handle_export_course_graph(self, params: dict[str, Any]) -> str:
         """Export a machine-readable course graph as JSON.
 
         Required kwargs: ``course_name``, ``course_slug``,
@@ -348,7 +343,7 @@ class OutputExportTool(BaseTool):
 
         # ── Build ModuleSummary list ────────────────────────────────
         modules_raw = params.get("modules")
-        modules: List[ModuleSummary] = []
+        modules: list[ModuleSummary] = []
         if modules_raw and isinstance(modules_raw, list):
             for m in modules_raw:
                 if isinstance(m, dict):
@@ -388,7 +383,7 @@ class OutputExportTool(BaseTool):
             f"Course graph exported for '{course_name}'.", path
         )
 
-    def _handle_write_file(self, params: Dict[str, Any]) -> str:
+    def _handle_write_file(self, params: dict[str, Any]) -> str:
         """Low-level: write arbitrary content to a single file."""
         file_path = str(params.get("path", ""))
         if not file_path:
@@ -401,7 +396,7 @@ class OutputExportTool(BaseTool):
         path = write_file(file_path, content, force=self.force)
         return _ok("File written.", path)
 
-    def _handle_write_directory_tree(self, params: Dict[str, Any]) -> str:
+    def _handle_write_directory_tree(self, params: dict[str, Any]) -> str:
         """Low-level: write a batch of files from a directory-tree mapping."""
         base_path = str(params.get("base_path", ""))
         if not base_path:
@@ -414,7 +409,7 @@ class OutputExportTool(BaseTool):
                 "Expected a dict of {relative_path: content}."
             )
 
-        files_dict: Dict[str, Any] = files_raw
+        files_dict: dict[str, Any] = files_raw
         written = write_directory_tree(
             base_path, files_dict, force=self.force
         )
@@ -677,7 +672,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 
-def _read_content(content: str, content_file: Optional[str]) -> str:
+def _read_content(content: str, content_file: str | None) -> str:
     """Resolve content: use *content* if non-empty, else read *content_file*."""
     if content.strip():
         return content
@@ -689,12 +684,12 @@ def _read_content(content: str, content_file: Optional[str]) -> str:
     return ""
 
 
-def _collect_files_from_dir(dir_path: str) -> Dict[str, str]:
+def _collect_files_from_dir(dir_path: str) -> dict[str, str]:
     """Walk *dir_path* and return ``{relative_path: content}`` mapping."""
     base = Path(dir_path)
     if not base.is_absolute():
         base = _PROJECT_ROOT / base
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
     if not base.is_dir():
         print(f"Warning: Not a directory: {base}", file=sys.stderr)
         return result
@@ -710,7 +705,7 @@ def _collect_files_from_dir(dir_path: str) -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     """CLI entry point — parse arguments, build tool, execute command.
 
     Parameters
