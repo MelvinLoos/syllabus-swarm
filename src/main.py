@@ -339,12 +339,106 @@ def _load_profile(path: str) -> dict:
     return data
 
 
+def _build_profile_context_string(profile: dict) -> str:
+    """Serialize all profile sections into a structured text block.
+
+    This ensures that schedule, assessment, kerntaken emphasis, tech stack,
+    and other profile data reach the agents via the ``course_context``
+    string, without requiring changes to the ``CourseSpecification`` model.
+
+    Parameters
+    ----------
+    profile : dict
+        Parsed YAML profile dictionary.
+
+    Returns
+    -------
+    str
+        A structured plain-text block suitable for injection into the
+        Intake Specialist synthesis prompt.
+    """
+    parts: list[str] = []
+
+    # --- Profile metadata ---
+    prof = profile.get("profile", {})
+    if prof:
+        name = prof.get("name", "")
+        desc = prof.get("description", "")
+        if name:
+            parts.append(f"Cohort: {name}")
+        if desc:
+            parts.append(f"Cohort Description: {desc.strip()}")
+
+    # --- BPV readiness ---
+    bpv = profile.get("bpv_readiness")
+    if bpv:
+        parts.append(f"BPV Readiness: {bpv}")
+
+    # --- Tech stack ---
+    tech = profile.get("tech_stack", {})
+    if tech:
+        lines = ["Tech Stack:"]
+        for key in (
+            "primary_language", "framework", "frontend", "database",
+            "version_control", "editor", "ci_cd", "containerisation",
+            "deployment",
+        ):
+            val = tech.get(key)
+            if val:
+                lines.append(f"  - {key}: {val}")
+        testing = tech.get("testing", {})
+        if testing:
+            tf = testing.get("framework", "")
+            tc = testing.get("coverage_target", "")
+            if tf:
+                lines.append(f"  - testing_framework: {tf}")
+            if tc:
+                lines.append(f"  - testing_coverage_target: {tc}")
+        parts.append("\n".join(lines))
+
+    # --- Kerntaken emphasis ---
+    ke = profile.get("kerntaken_emphasis", {})
+    if ke:
+        lines = ["Kerntaken Emphasis:"]
+        for kt in ("P1-K1", "P2-K1", "P3-K1", "P4-K1"):
+            val = ke.get(kt)
+            if val:
+                lines.append(f"  - {kt}: {val}")
+        parts.append("\n".join(lines))
+
+    # --- Schedule ---
+    sched = profile.get("schedule", {})
+    if sched:
+        lines = ["Schedule:"]
+        for key in ("semester", "weeks", "contact_hours_per_week", "self_study_hours_per_week"):
+            val = sched.get(key)
+            if val is not None:
+                lines.append(f"  - {key}: {val}")
+        parts.append("\n".join(lines))
+
+    # --- Assessment ---
+    assess = profile.get("assessment", {})
+    if assess:
+        lines = ["Assessment:"]
+        for key in ("practical_exams", "portfolio_items", "proeve_preparation", "code_reviews_per_semester"):
+            val = assess.get(key)
+            if val is not None:
+                lines.append(f"  - {key}: {val}")
+        parts.append("\n".join(lines))
+
+    return "\n\n".join(parts)
+
+
 def _inject_profile(spec: CourseSpecification, profile: dict) -> CourseSpecification:
     """Inject pre-populated profile values into the CourseSpecification model.
 
     Only sets a field when the profile explicitly provides a non-None value
     for it AND the model field is currently None.  This means the Intake
     Specialist can still set missing fields via the LLM interview.
+
+    Additionally, serializes the full profile into ``course_context`` so
+    that schedule, assessment, kerntaken emphasis, and tech stack data
+    reach the downstream agents without model changes.
 
     Parameters
     ----------
@@ -374,6 +468,15 @@ def _inject_profile(spec: CourseSpecification, profile: dict) -> CourseSpecifica
         pl = tech.get("primary_language")
         if pl:
             spec.primary_language = pl
+
+    # Serialize the full profile into course_context so schedule,
+    # assessment, kerntaken, and tech stack data reach the agents.
+    profile_context = _build_profile_context_string(profile)
+    if profile_context:
+        if spec.course_context:
+            spec.course_context = profile_context + "\n\n" + spec.course_context
+        else:
+            spec.course_context = profile_context
 
     return spec
 
@@ -684,20 +787,36 @@ def _run_intake(
         return f"Course Name: {course_name}", "Python", "", ""
 
     # ── Step 3: Synthesise course context ────────────────────────────────
-    # Include pre-populated fields in the synthesis prompt so the LLM
-    # incorporates them into the course_context.
+    # Include pre-populated fields AND the full profile context in the
+    # synthesis prompt so the LLM incorporates schedule, assessment,
+    # kerntaken emphasis, and tech stack into the course_context.
     pre_pop_bonus = ""
     if pre_populated is not None:
+        bonus_parts: list[str] = []
+
+        # Direct fields (grading_scale, student_pathway, etc.)
         filled = _get_pre_populated_fields(pre_populated)
         if filled:
-            parts: list[str] = []
+            field_lines: list[str] = []
             for field in filled:
-                parts.append(f"   - {field}: {getattr(pre_populated, field)}")
-            pre_pop_bonus = (
-                "\n\n**Pre-populated constraints from cohort profile "
+                field_lines.append(f"   - {field}: {getattr(pre_populated, field)}")
+            bonus_parts.append(
+                "**Pre-populated constraints from cohort profile "
                 "(already known — incorporate into course_context):**\n"
-                + "\n".join(parts)
+                + "\n".join(field_lines)
             )
+
+        # Full profile context (schedule, assessment, kerntaken, tech stack)
+        if pre_populated.course_context:
+            bonus_parts.append(
+                "**Additional profile data (schedule, assessment, "
+                "kerntaken emphasis, tech stack) — incorporate ALL of "
+                "this into the course_context:**\n"
+                + pre_populated.course_context
+            )
+
+        if bonus_parts:
+            pre_pop_bonus = "\n\n" + "\n\n".join(bonus_parts)
 
     synthesis_task = Task(
         description=(
