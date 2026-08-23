@@ -243,14 +243,14 @@ class TestCreateLabDeveloper:
             agent = create_lab_developer()
             assert agent.allow_delegation is False
 
-    def test_max_iter_is_seven(self, mock_llm: MagicMock) -> None:
-        """The agent has max_iter set to 7 (higher than architect for complex labs)."""
+    def test_max_iter_is_twenty_five(self, mock_llm: MagicMock) -> None:
+        """The agent has max_iter set to 25 (needs room for 3 tiers × tool calls + thinking + retries)."""
         with patch(
             "src.agents.lab_developer.build_llm_for_agent",
             return_value=mock_llm,
         ):
             agent = create_lab_developer()
-            assert agent.max_iter == 7
+            assert agent.max_iter == 25
 
     def test_max_rpm_is_twenty(self, mock_llm: MagicMock) -> None:
         """The agent has max_rpm set to 20."""
