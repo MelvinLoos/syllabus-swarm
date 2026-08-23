@@ -419,6 +419,109 @@ def _generate_run_id(course_safe_name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Module chaining — resolve prerequisites from a previous course
+# ---------------------------------------------------------------------------
+
+
+def _resolve_prerequisites(builds_upon_slug: str) -> str:
+    """Resolve prerequisite knowledge from a previous course's output.
+
+    Searches ``output/`` for a run directory whose name contains
+    *builds_upon_slug*, reads its ``course_graph.json``, and extracts
+    the ``learning_objectives`` and ``key_concepts`` into a formatted
+    string suitable for injection into the course context.
+
+    Parameters
+    ----------
+    builds_upon_slug : str
+        A slug fragment to match against run directory names (e.g.
+        ``"ML_Basics"`` matches ``2026-08-22_153000_ML_Basics``).
+
+    Returns
+    -------
+    str
+        A formatted string describing what students have already mastered,
+        ready to prepend to the course context.
+
+    Raises
+    ------
+    SystemExit
+        If no matching run directory or ``course_graph.json`` is found.
+    """
+    from src.models import CourseGraph
+
+    output_dir = OUTPUT_ROOT
+    if not output_dir.exists():
+        print(
+            f"❌ Output directory not found: {output_dir}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Find run directories whose name contains the slug.
+    matching_dirs = sorted(
+        d for d in output_dir.iterdir()
+        if d.is_dir() and builds_upon_slug in d.name
+    )
+
+    if not matching_dirs:
+        print(
+            f"❌ No run directory found matching slug '{builds_upon_slug}' "
+            f"in {output_dir}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Use the first match (most recent when sorted alphabetically, which
+    # works because run IDs start with YYYY-MM-DD_HHMMSS).
+    run_dir = matching_dirs[0]
+    graph_path = run_dir / "course_graph.json"
+
+    if not graph_path.exists():
+        print(
+            f"❌ No course_graph.json found in {run_dir}.  "
+            f"Ensure the previous course was exported with --export-course-graph.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        raw_json = graph_path.read_text(encoding="utf-8")
+        graph = CourseGraph.model_validate_json(raw_json)
+    except Exception as exc:
+        print(
+            f"❌ Failed to parse course_graph.json from {graph_path}: {exc}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Build the prerequisite context string.
+    parts: list[str] = [
+        "The students have already mastered the following from a "
+        "previous course:\n",
+    ]
+
+    if graph.learning_objectives:
+        parts.append("**Learning Objectives:**")
+        for obj in graph.learning_objectives:
+            parts.append(f"- {obj}")
+        parts.append("")
+
+    if graph.key_concepts:
+        parts.append("**Key Concepts:**")
+        parts.append("- " + ", ".join(graph.key_concepts))
+        parts.append("")
+
+    if not graph.learning_objectives and not graph.key_concepts:
+        parts.append(
+            "(No learning objectives or key concepts were recorded "
+            "in the previous course graph.)\n"
+        )
+
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # Intake Specialist — interactive interview loop
 # ---------------------------------------------------------------------------
 
@@ -428,6 +531,7 @@ def _run_intake(
     *,
     verbose: bool = False,
     pre_populated: Optional[CourseSpecification] = None,
+    prerequisites: Optional[str] = None,
 ) -> tuple[str, str, str, str]:
     """Run the Intake Specialist to gather rich course context.
 
@@ -444,6 +548,11 @@ def _run_intake(
         The initial course name / topic from the user.
     verbose : bool
         Enable detailed agent logging.
+    prerequisites : str or None
+        Optional prerequisite context from a previous course (via
+        ``--builds-upon``).  When provided, injected into the question
+        prompt so the Intake Specialist knows what students have already
+        mastered and can tailor questions accordingly.
 
     Returns
     -------
@@ -453,6 +562,16 @@ def _run_intake(
         intake failed (e.g. LLM error, no user input).
     """
     intake_agent = get_intake_specialist(verbose=verbose)
+
+    # ── Build prerequisite context for the question prompt ─────────────
+    prereq_section = ""
+    if prerequisites:
+        prereq_section = (
+            f"\n**📎  Prerequisite Knowledge (from a previous course):**\n"
+            f"{prerequisites}\n"
+            f"Take this into account when formulating your questions — "
+            f"do NOT ask about topics the students have already mastered.\n"
+        )
 
     # ── Build profile context for the question prompt ──────────────────
     skip_section = ""
@@ -487,7 +606,8 @@ def _run_intake(
     question_task = Task(
         description=(
             f"The user wants a syllabus for the following course:\n\n"
-            f"**Course Name:** {course_name}\n\n"
+            f"**Course Name:** {course_name}\n"
+            f"{prereq_section}\n"
             f"Your task: Ask 2-3 concise, targeted clarifying questions "
             f"about:\n"
             f"1. The tech stack and tooling (languages, frameworks, "
@@ -898,6 +1018,12 @@ def main(argv: list[str] | None = None) -> None:
 
         print("📋  --load-session mode — skipping interactive intake.\n")
 
+        # --- Inject prerequisites from a previous course (--builds-upon) --
+        if builds_upon:
+            prereq_context = _resolve_prerequisites(builds_upon)
+            course_context = prereq_context + "\n\n" + course_context
+            print("📎  Injected prerequisites from previous course.\n")
+
         # Generate a fresh run_id for this pipeline run.
         safe_name = _sanitize_filename(course_name)
         run_id = _generate_run_id(safe_name)
@@ -948,6 +1074,12 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  Labs:       {'Skip' if skip_labs else 'Generate'}")
     print(f"{'=' * 60}\n")
 
+    # --- Resolve prerequisites before intake (--builds-upon) -------------
+    prereq_context: Optional[str] = None
+    if builds_upon:
+        prereq_context = _resolve_prerequisites(builds_upon)
+        print("📎  Resolved prerequisites from previous course.\n")
+
     # --- 2. Run Intake Specialist (skip if resuming) ---------------------
     if resume_dir:
         # When resuming, we already have a syllabus — no need for intake.
@@ -966,6 +1098,7 @@ def main(argv: list[str] | None = None) -> None:
             course_name,
             verbose=True,
             pre_populated=pre_populated,
+            prerequisites=prereq_context,
         )
 
     # --- 2a. Auto-save intake session (Issue #9) -------------------------
