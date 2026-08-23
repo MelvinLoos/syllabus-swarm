@@ -396,6 +396,7 @@ def write_syllabus(
     content: Any,
     *,
     force: bool = False,
+    run_id: str | None = None,
 ) -> Path:
     """Write a syllabus Markdown file to ``output/syllabus/<course>.md``.
 
@@ -410,6 +411,9 @@ def write_syllabus(
     force : bool
         When ``False``, raises ``FileWriteError`` if the syllabus already
         exists.
+    run_id : str or None
+        When provided, writes to ``output/<run_id>/syllabus/<course>.md``
+        instead of the global ``output/syllabus/`` path.
 
     Returns
     -------
@@ -417,7 +421,10 @@ def write_syllabus(
         Absolute path to the written syllabus.
     """
     safe = _sanitize_filename(course_name)
-    path = OUTPUT_PATHS.syllabus_dir / f"{safe}.md"
+    if run_id:
+        path = _PROJECT_ROOT / "output" / run_id / "syllabus" / f"{safe}.md"
+    else:
+        path = OUTPUT_PATHS.syllabus_dir / f"{safe}.md"
     return write_file(path, content, force=force)
 
 

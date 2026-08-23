@@ -229,7 +229,13 @@ class OutputExportTool(BaseTool):
     # ------------------------------------------------------------------
 
     def _handle_write_syllabus(self, params: dict[str, Any]) -> str:
-        """Write a syllabus Markdown file."""
+        """Write a syllabus Markdown file.
+
+        When a ``run_id`` is provided, the syllabus is written to
+        ``output/<run_id>/syllabus/<course>.md`` (per-run isolation).
+        Without a ``run_id``, it falls back to the global
+        ``output/syllabus/<course>.md`` path.
+        """
         course_name = str(params.get("course_name", ""))
         if not course_name:
             return _err("Missing required parameter: 'course_name'.")
@@ -238,7 +244,8 @@ class OutputExportTool(BaseTool):
         if not content:
             return _err("Missing required parameter: 'content'.")
 
-        path = write_syllabus(course_name, content, force=self.force)
+        run_id = str(params.get("run_id", "") or "")
+        path = write_syllabus(course_name, content, force=self.force, run_id=run_id or None)
         return _ok(f"Syllabus written for '{course_name}'.", path)
 
     def _handle_write_labs(self, params: dict[str, Any]) -> str:
