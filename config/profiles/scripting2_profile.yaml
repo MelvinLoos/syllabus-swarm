@@ -43,13 +43,6 @@ kerntaken_emphasis:
 grading_scale: "OVG"
 hardware_constraints: "BYOD laptop. Requires local Node.js installation. MongoDB Atlas used for database to avoid local DB setup issues."
 
-# --- Course Schedule ---------------------------------------------------------
-schedule:
-  semester: 3
-  weeks: 25
-  contact_hours_per_week: 2
-  self_study_hours_per_week: 0  # 0 hours required if actively participating in class
-
 # --- Assessment --------------------------------------------------------------
 assessment:
   practical_exams: 1

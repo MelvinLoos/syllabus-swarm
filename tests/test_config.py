@@ -33,7 +33,7 @@ from src.main import (
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SCHOOL_DEFAULTS = _PROJECT_ROOT / "config" / "school_defaults.yaml"
-_PROGRAM1_PROFILE = _PROJECT_ROOT / "config" / "cohorts" / "program1_profile.yaml"
+_PROGRAM1_PROFILE = _PROJECT_ROOT / "config" / "profiles" / "program1_profile.yaml"
 
 
 # ===================================================================
@@ -207,7 +207,7 @@ class TestSchoolDefaultsYaml:
 
 
 class TestProgram1ProfileYaml:
-    """Validate the structure and values of config/cohorts/program1_profile.yaml."""
+    """Validate the structure and values of config/profiles/program1_profile.yaml."""
 
     def test_file_exists(self) -> None:
         """program1_profile.yaml is present."""
@@ -296,12 +296,12 @@ class TestLoadProfile:
     def test_raises_system_exit_for_missing_file(self) -> None:
         """_load_profile exits with 1 for a non-existent file."""
         with pytest.raises(SystemExit) as exc:
-            _load_profile("config/cohorts/nonexistent.yaml")
+            _load_profile("config/profiles/nonexistent.yaml")
         assert exc.value.code == 1
 
     def test_raises_system_exit_for_non_yaml_extension(self) -> None:
         """_load_profile exits with 1 for .txt files."""
-        tmp = _PROJECT_ROOT / "config" / "cohorts" / "_test.txt"
+        tmp = _PROJECT_ROOT / "config" / "profiles" / "_test.txt"
         tmp.parent.mkdir(parents=True, exist_ok=True)
         try:
             tmp.write_text("hello: world")
@@ -313,7 +313,7 @@ class TestLoadProfile:
 
     def test_raises_system_exit_for_invalid_yaml(self) -> None:
         """_load_profile exits with 1 for malformed YAML."""
-        tmp = _PROJECT_ROOT / "config" / "cohorts" / "_bad.yaml"
+        tmp = _PROJECT_ROOT / "config" / "profiles" / "_bad.yaml"
         tmp.parent.mkdir(parents=True, exist_ok=True)
         try:
             tmp.write_text(": bad : yaml: [")
@@ -325,7 +325,7 @@ class TestLoadProfile:
 
     def test_raises_system_exit_for_non_dict_root(self) -> None:
         """_load_profile exits with 1 when root is not a dict."""
-        tmp = _PROJECT_ROOT / "config" / "cohorts" / "_list.yaml"
+        tmp = _PROJECT_ROOT / "config" / "profiles" / "_list.yaml"
         tmp.parent.mkdir(parents=True, exist_ok=True)
         try:
             tmp.write_text("- item1\n- item2\n")
@@ -337,7 +337,7 @@ class TestLoadProfile:
 
     def test_resolves_relative_paths_against_project_root(self) -> None:
         """Relative paths are resolved against _PROJECT_ROOT."""
-        data = _load_profile("config/cohorts/program1_profile.yaml")
+        data = _load_profile("config/profiles/program1_profile.yaml")
         assert isinstance(data, dict)
 # ===================================================================
 # _inject_profile — Model injection from profile
@@ -519,9 +519,9 @@ class TestGetProfilePath:
         """Returns the path after --profile."""
         with patch.object(sys, "argv", [
             "main.py", "--profile",
-            "config/cohorts/program1_profile.yaml", "Course"
+            "config/profiles/program1_profile.yaml", "Course"
         ]):
-            assert _get_profile_path() == "config/cohorts/program1_profile.yaml"
+            assert _get_profile_path() == "config/profiles/program1_profile.yaml"
 
     def test_exits_when_no_path_after_flag(self) -> None:
         """Exits with code 1 when --profile has no argument."""
@@ -671,26 +671,26 @@ class TestCleanCliFlags:
         """--profile and its value are removed from sys.argv."""
         argv = [
             "main.py", "--profile",
-            "config/cohorts/program1_profile.yaml",
+            "config/profiles/program1_profile.yaml",
             "Course Name",
         ]
         with patch.object(sys, "argv", argv.copy()):
             _clean_cli_flags()
             assert "--profile" not in sys.argv
-            assert "config/cohorts/program1_profile.yaml" not in sys.argv
+            assert "config/profiles/program1_profile.yaml" not in sys.argv
 
     def test_removes_multiple_flags(self) -> None:
         """--profile, --skip-labs, and --resume-from are all cleaned."""
         argv = [
             "main.py", "--skip-labs", "--profile",
-            "config/cohorts/program1_profile.yaml",
+            "config/profiles/program1_profile.yaml",
             "--resume-from", "/tmp/some/dir", "Course Name",
         ]
         with patch.object(sys, "argv", argv.copy()):
             _clean_cli_flags()
             assert "--skip-labs" not in sys.argv
             assert "--profile" not in sys.argv
-            assert "config/cohorts/program1_profile.yaml" not in sys.argv
+            assert "config/profiles/program1_profile.yaml" not in sys.argv
             assert "--resume-from" not in sys.argv
             assert "/tmp/some/dir" not in sys.argv
             assert "Course Name" in sys.argv

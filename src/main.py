@@ -173,7 +173,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  %(prog)s \"Data Science with Python\"\n"
-            "  %(prog)s \"Laravel Web Development\" --profile config/cohorts/program1_profile.yaml\n"
+            "  %(prog)s \"Laravel Web Development\" --profile config/profiles/program1_profile.yaml\n"
             "  %(prog)s \"Advanced PHP\" --load-session output/2026-08-22_153000_ML_Basics/intake_session.json\n"
             "  %(prog)s \"Period 3 Project\" --builds-upon 2026-08-22_153000_ML_Basics\n"
             "  %(prog)s \"ML Basics\" --resume-from output/2026-08-22_153000_ML_Basics\n"
@@ -206,7 +206,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
             "Load a YAML cohort profile to pre-populate static constraints "
             "(grading scale, student pathway, year level, hardware).  "
             "The Intake Specialist skips questions for pre-populated fields.  "
-            "Example: config/cohorts/program1_profile.yaml"
+            "Example: config/profiles/program1_profile.yaml"
         ),
     )
 
@@ -404,16 +404,6 @@ def _build_profile_context_string(profile: dict) -> str:
             val = ke.get(kt)
             if val:
                 lines.append(f"  - {kt}: {val}")
-        parts.append("\n".join(lines))
-
-    # --- Schedule ---
-    sched = profile.get("schedule", {})
-    if sched:
-        lines = ["Schedule:"]
-        for key in ("semester", "weeks", "contact_hours_per_week", "self_study_hours_per_week"):
-            val = sched.get(key)
-            if val is not None:
-                lines.append(f"  - {key}: {val}")
         parts.append("\n".join(lines))
 
     # --- Assessment ---
@@ -711,17 +701,20 @@ def _run_intake(
             f"The user wants a syllabus for the following course:\n\n"
             f"**Course Name:** {course_name}\n"
             f"{prereq_section}\n"
-            f"Your task: Ask 2-3 concise, targeted clarifying questions "
+            f"Your task: Ask 3-4 concise, targeted clarifying questions "
             f"about:\n"
             f"1. The tech stack and tooling (languages, frameworks, "
             f"platforms, version control, deployment tools)\n"
             f"2. Which kerntaken to emphasise: planning (P1-K1), designing "
             f"(P2-K1), building (P3-K1), and/or testing (P4-K1) software\n"
             f"3. The student profile: BOL or BBL pathway, year level "
-            f"(1, 2, or 3), and BPV (internship) readiness\n\n"
+            f"(1, 2, or 3), and BPV (internship) readiness\n"
+            f"4. The specific schedule and time budget (number of weeks, "
+            f"contact hours per week, self-study hours, and any known "
+            f"disruptions like holidays or school trips)\n\n"
             f"{skip_section}\n"
             f"Output ONLY the questions — no preamble, no commentary, "
-            f"no markdown formatting.  Number them 1, 2, 3.  Keep each "
+            f"no markdown formatting.  Number them 1, 2, 3, 4.  Keep each "
             f"question to one or two sentences."
         ),
         expected_output=(
@@ -836,6 +829,8 @@ def _run_intake(
             f"   - Kerntaken emphasis (which of P1-K1 through P4-K1 to "
             f"focus on)\n"
             f"   - Student profile (BOL/BBL, year level, BPV readiness)\n"
+            f"   - Specific schedule and time budget (weeks, contact hours, "
+            f"self-study hours, known disruptions like holidays or trips)\n"
             f"   - Any additional pedagogical notes or constraints\n\n"
             f"2. ``primary_language`` — The EXACT programming language "
             f"that will be used for coding labs (e.g., 'JavaScript', "

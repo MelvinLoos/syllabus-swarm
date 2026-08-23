@@ -137,7 +137,7 @@ python src/main.py "Data Science with Python"
 python src/main.py "Full-Stack Web Development" --skip-labs
 
 # Load a cohort profile (pre-populates static constraints, skips intake questions)
-python src/main.py "Laravel Web Development" --profile config/cohorts/program1_profile.yaml
+python src/main.py "Laravel Web Development" --profile config/profiles/program1_profile.yaml
 
 # Resume a previous run (skip intake, re-run agents)
 python src/main.py "ML Basics" --resume-from output/2026-08-22_153000_ML_Basics
@@ -161,7 +161,7 @@ syllabus-swarm supports a layered configuration model that separates static inst
 ```
 config/
 ├── school_defaults.yaml          # Immutable institution-wide defaults
-└── cohorts/
+└── profiles/
     ├── program1_profile.yaml     # Example: PHP/Laravel — BOL Pathway (Year 2)
     └── scripting2_profile.yaml   # Example: Python scripting — BBL Pathway
 ```

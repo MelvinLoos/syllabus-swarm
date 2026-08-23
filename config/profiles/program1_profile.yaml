@@ -6,7 +6,7 @@
 # programme delivered via the BOL (school-based) pathway with a PHP/Laravel
 # tech stack.  Load this profile with:
 #
-#     python src/main.py "Laravel Web Development" --profile config/cohorts/program1_profile.yaml
+#     python src/main.py "Laravel Web Development" --profile config/profiles/program1_profile.yaml
 #
 # When a profile is loaded, the Intake Specialist will skip questions for
 # any field that is pre-populated (grading_scale, student_pathway,
@@ -57,13 +57,6 @@ kerntaken_emphasis:
 # so the Intake Specialist skips them during the interview.
 grading_scale: "OVG"
 hardware_constraints: "BYOD laptop (Windows/macOS/Linux), 8GB+ RAM, Chrome-based browsers preferred. Docker via Laravel Sail on capable machines; GitHub Codespaces as fallback."
-
-# --- Course Schedule ---------------------------------------------------------
-schedule:
-  semester: 2
-  weeks: 20
-  contact_hours_per_week: 16
-  self_study_hours_per_week: 12
 
 # --- Assessment --------------------------------------------------------------
 assessment:
