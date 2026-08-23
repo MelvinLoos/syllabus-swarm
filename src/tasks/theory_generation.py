@@ -207,7 +207,10 @@ def create_theory_task(
     )
 
     # ---- Compute the output file path -----------------------------------
-    output_file: str = "output/theory/README.md"
+    if run_id:
+        output_file: str = f"output/{run_id}/theory/README.md"
+    else:
+        output_file: str = "output/theory/README.md"
 
     # ---- Assemble and return the Task -----------------------------------
     return Task(

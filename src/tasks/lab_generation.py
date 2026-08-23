@@ -516,7 +516,10 @@ def create_lab_generation_task(
         )
 
     # ---- Compute the output file path -----------------------------------
-    output_file: str = "output/labs/README.md"
+    if run_id:
+        output_file: str = f"output/{run_id}/labs/README.md"
+    else:
+        output_file: str = "output/labs/README.md"
 
     # ---- Assemble and return the Task -----------------------------------
     return Task(

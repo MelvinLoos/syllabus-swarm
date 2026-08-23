@@ -144,6 +144,7 @@ def create_syllabus_generation_task(
     course_description: str | None = None,
     course_duration: str | None = None,
     target_audience: str | None = None,
+    run_id: str | None = None,
     verbose: bool = False,
 ) -> Task:
     """Create a CrewAI Task that generates a Humanics-aligned syllabus.
@@ -251,7 +252,10 @@ def create_syllabus_generation_task(
         .replace("&", "and")
         .lower()
     )
-    output_file: str = f"output/syllabus/{safe_name}.md"
+    if run_id:
+        output_file: str = f"output/{run_id}/syllabus/{safe_name}.md"
+    else:
+        output_file: str = f"output/syllabus/{safe_name}.md"
 
     # ---- Assemble and return the Task -----------------------------------
     return Task(
