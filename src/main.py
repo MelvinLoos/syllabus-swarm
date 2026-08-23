@@ -33,6 +33,7 @@ Environment
 
 from __future__ import annotations
 
+import argparse
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -147,14 +148,120 @@ class IntakeSession(BaseModel):
     )
 
 # ---------------------------------------------------------------------------
-# CLI helpers
+# CLI — Argument Parser
 # ---------------------------------------------------------------------------
 
 
-def _gather_course_name() -> str:
-    """Return the course name from CLI args or interactive input."""
-    if len(sys.argv) > 1:
-        return " ".join(sys.argv[1:]).strip()
+def build_cli_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for the syllabus-swarm CLI.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        A fully-configured parser with all flags and the optional
+        ``course_name`` positional argument.
+    """
+    parser = argparse.ArgumentParser(
+        prog="syllabus-swarm",
+        description=(
+            "🐝  Syllabus Swarm — Multi-agent curriculum generation pipeline.  "
+            "Orchestrates the Intake Specialist, Curriculum Architect, "
+            "Lab & Project Developer, and Output Exporter agents to produce "
+            "complete course materials from a single command."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  %(prog)s \"Data Science with Python\"\n"
+            "  %(prog)s \"Laravel Web Development\" --profile config/cohorts/program1_profile.yaml\n"
+            "  %(prog)s \"Advanced PHP\" --load-session output/2026-08-22_153000_ML_Basics/intake_session.json\n"
+            "  %(prog)s \"Period 3 Project\" --builds-upon 2026-08-22_153000_ML_Basics\n"
+            "  %(prog)s \"ML Basics\" --resume-from output/2026-08-22_153000_ML_Basics\n"
+            "  %(prog)s \"Full-Stack Web Development\" --skip-labs\n"
+            "  %(prog)s  # interactive prompt\n"
+        ),
+    )
+
+    parser.add_argument(
+        "course_name",
+        nargs="*",
+        help=(
+            "Course name / topic (e.g. \"Data Science with Python\").  "
+            "If omitted, prompts interactively."
+        ),
+    )
+
+    parser.add_argument(
+        "--skip-labs",
+        action="store_true",
+        default=False,
+        help="Generate syllabus only — skip lab generation.",
+    )
+
+    parser.add_argument(
+        "--profile",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Load a YAML cohort profile to pre-populate static constraints "
+            "(grading scale, student pathway, year level, hardware).  "
+            "The Intake Specialist skips questions for pre-populated fields.  "
+            "Example: config/cohorts/program1_profile.yaml"
+        ),
+    )
+
+    parser.add_argument(
+        "--load-session",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Load a saved intake session JSON to skip the interactive "
+            "interview entirely.  Example: "
+            "output/2026-08-22_153000_ML_Basics/intake_session.json"
+        ),
+    )
+
+    parser.add_argument(
+        "--resume-from",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Resume from a previous run directory (skips intake, re-runs "
+            "agents).  Example: output/2026-08-22_153000_ML_Basics"
+        ),
+    )
+
+    parser.add_argument(
+        "--builds-upon",
+        default=None,
+        metavar="SLUG",
+        help=(
+            "Inject prerequisites from a previous course's output.  "
+            "Reads the previous course's learning objectives and key "
+            "concepts and passes them as prerequisites to the Curriculum "
+            "Architect.  Example: 2026-08-22_153000_ML_Basics"
+        ),
+    )
+
+    return parser
+
+
+# ---------------------------------------------------------------------------
+# CLI helpers (post-argparse)
+# ---------------------------------------------------------------------------
+
+
+def _gather_course_name(parsed_name: str | None = None) -> str:
+    """Return the course name from parsed args or interactive input.
+
+    Parameters
+    ----------
+    parsed_name : str or None
+        The course name extracted from positional CLI arguments by
+        argparse.  When ``None`` or empty, prompts interactively.
+    """
+    if parsed_name:
+        return parsed_name.strip()
 
     try:
         return input("📘 Enter course name / topic: ").strip()
@@ -173,64 +280,9 @@ def _validate_name(name: str) -> str:
         sys.exit(1)
     return name
 
-
-def _should_skip_labs() -> bool:
-    """Check CLI arguments for --skip-labs flag."""
-    return "--skip-labs" in sys.argv
-
-
-def _get_resume_dir() -> str | None:
-    """Extract the --resume-from value from CLI arguments, or None."""
-    try:
-        idx = sys.argv.index("--resume-from")
-    except ValueError:
-        return None
-    if idx + 1 >= len(sys.argv):
-        print("❌ --resume-from requires a directory path.", file=sys.stderr)
-        sys.exit(1)
-    return sys.argv[idx + 1]
-
-
-def _clean_cli_flags() -> None:
-    """Remove known CLI flags from sys.argv so they don't pollute the course name."""
-    for flag in ("--skip-labs", "--resume-from", "--profile", "--load-session"):
-        while flag in sys.argv:
-            idx = sys.argv.index(flag)
-            # Remove the flag and its value (if it has one)
-            if flag in ("--resume-from", "--profile", "--load-session") and idx + 1 < len(sys.argv):
-                sys.argv.pop(idx)  # value
-            sys.argv.pop(idx)  # flag
-
-
-def _get_load_session_path() -> str | None:
-    """Extract the --load-session value from CLI arguments, or None."""
-    try:
-        idx = sys.argv.index("--load-session")
-    except ValueError:
-        return None
-    if idx + 1 >= len(sys.argv):
-        print(
-            "❌ --load-session requires a path to an intake_session.json file.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    return sys.argv[idx + 1]
-
 # ---------------------------------------------------------------------------
 # Profile loading
 # ---------------------------------------------------------------------------
-
-
-def _get_profile_path() -> str | None:
-    """Extract the --profile value from CLI arguments, or None."""
-    try:
-        idx = sys.argv.index("--profile")
-    except ValueError:
-        return None
-    if idx + 1 >= len(sys.argv):
-        print("❌ --profile requires a path to a YAML file.", file=sys.stderr)
-        sys.exit(1)
-    return sys.argv[idx + 1]
 
 
 def _load_profile(path: str) -> dict:
@@ -745,16 +797,32 @@ def _fmt_size(num_bytes: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-def main() -> None:
-    """Entry point — orchestrate the intake + syllabus + labs pipeline."""
+def main(argv: list[str] | None = None) -> None:
+    """Entry point — orchestrate the intake + syllabus + labs pipeline.
 
-    # --- 1. Gather input -------------------------------------------------
-    skip_labs = _should_skip_labs()
-    resume_dir = _get_resume_dir()
-    profile_path = _get_profile_path()
-    load_session_path = _get_load_session_path()
+    Parameters
+    ----------
+    argv : list[str] or None
+        Command-line arguments.  When ``None``, reads from ``sys.argv``.
+        Useful for testing.
+    """
 
-    # Validate flag combinations.
+    # --- 0. Parse CLI arguments -------------------------------------------
+    parser = build_cli_parser()
+    args = parser.parse_args(argv)
+
+    skip_labs: bool = args.skip_labs
+    resume_dir: str | None = args.resume_from
+    profile_path: str | None = args.profile
+    load_session_path: str | None = args.load_session
+    builds_upon: str | None = args.builds_upon
+
+    # Collapse the positional course_name list into a single string.
+    parsed_course_name: str | None = (
+        " ".join(args.course_name).strip() if args.course_name else None
+    )
+
+    # --- 1. Validate flag combinations ------------------------------------
     if skip_labs and resume_dir:
         print(
             "❌ --skip-labs and --resume-from cannot be used together "
@@ -771,7 +839,7 @@ def main() -> None:
         )
         sys.exit(1)
 
-    # Load profile if provided (before _clean_cli_flags removes --profile)
+    # --- 2. Load profile if provided --------------------------------------
     profile_data: Optional[dict] = None
     pre_populated: Optional[CourseSpecification] = None
     if profile_path:
@@ -788,8 +856,6 @@ def main() -> None:
             print(f"    Pre-populated: {', '.join(filled)}")
         if pre_populated.primary_language and pre_populated.primary_language not in ("", "Python"):
             print(f"    Primary language: {pre_populated.primary_language}")
-
-    _clean_cli_flags()
 
     # --- 1a. --load-session path (bypass interactive intake) -------------
 
@@ -863,7 +929,7 @@ def main() -> None:
 
     # --- 1b. Normal intake flow ------------------------------------------
 
-    course_name = _gather_course_name()
+    course_name = _gather_course_name(parsed_course_name)
     course_name = _validate_name(course_name)
 
     # Compute run_id *before* the intake so we can save the session
