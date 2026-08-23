@@ -61,6 +61,7 @@ from src.exporters.file_writer import (
     OUTPUT_PATHS,
     FileWriteError,
     OutputPathConfig,
+    _sanitize_filename,
     write_directory_tree,
     write_file,
     write_lab_file,
@@ -246,12 +247,25 @@ class OutputExportTool(BaseTool):
         return _ok(f"Syllabus written for '{course_name}'.", path)
 
     def _handle_write_labs(self, params: Dict[str, Any]) -> str:
-        """Write a batch of lab files from a files-dict mapping."""
+        """Write a batch of lab files from a files-dict mapping.
+
+        Files are written to one of two locations depending on whether
+        a ``run_id`` is provided:
+
+        * **With run_id**: ``output/<run_id>/labs/<course_name>/<tier>/``
+          (per-run isolation, the default for pipeline runs).
+        * **Without run_id**: ``output/labs/<course_name>/<tier>/``
+          (shared global path, used by the CLI or standalone tool calls).
+
+        The ``course_name`` is sanitised into a safe directory name.
+        """
         course_name = str(params.get("course_name", ""))
         if not course_name:
             return _err("Missing required parameter: 'course_name'.")
 
         tier = str(params.get("tier", "tier1_foundations"))
+        run_id = str(params.get("run_id", "") or "")
+
         files_raw = params.get("files")
         if not files_raw or not isinstance(files_raw, dict):
             return _err(
@@ -260,7 +274,13 @@ class OutputExportTool(BaseTool):
             )
 
         files_dict: Dict[str, Any] = files_raw
-        base = OUTPUT_PATHS.labs_dir / tier
+        safe_course = _sanitize_filename(course_name)
+
+        if run_id:
+            base = _PROJECT_ROOT / "output" / run_id / "labs" / safe_course / tier
+        else:
+            base = OUTPUT_PATHS.labs_dir / safe_course / tier
+
         written = write_directory_tree(base, files_dict, force=self.force)
         return _ok(
             f"Wrote {len(written)} lab file(s) for '{course_name}' "
