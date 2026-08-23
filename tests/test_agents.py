@@ -243,23 +243,23 @@ class TestCreateLabDeveloper:
             agent = create_lab_developer()
             assert agent.allow_delegation is False
 
-    def test_max_iter_is_twenty_five(self, mock_llm: MagicMock) -> None:
-        """The agent has max_iter set to 25 (needs room for 3 tiers × tool calls + thinking + retries)."""
+    def test_max_iter_is_sixty(self, mock_llm: MagicMock) -> None:
+        """The agent has max_iter set to 60 (needs room for 3 tiers × tool calls + thinking + retries)."""
         with patch(
             "src.agents.lab_developer.build_llm_for_agent",
             return_value=mock_llm,
         ):
             agent = create_lab_developer()
-            assert agent.max_iter == 25
+            assert agent.max_iter == 60
 
-    def test_max_rpm_is_twenty(self, mock_llm: MagicMock) -> None:
-        """The agent has max_rpm set to 20."""
+    def test_max_rpm_is_thirty(self, mock_llm: MagicMock) -> None:
+        """The agent has max_rpm set to 30."""
         with patch(
             "src.agents.lab_developer.build_llm_for_agent",
             return_value=mock_llm,
         ):
             agent = create_lab_developer()
-            assert agent.max_rpm == 20
+            assert agent.max_rpm == 30
 
     def test_verbose_defaults_to_false(self, mock_llm: MagicMock) -> None:
         """verbose is False by default."""

@@ -129,8 +129,8 @@ def create_lab_developer(
         llm=llm,
         verbose=verbose,
         allow_delegation=False,
-        max_iter=25,
-        max_rpm=20,
+        max_iter=60,
+        max_rpm=30,
         tools=[export_tool],
     )
 
