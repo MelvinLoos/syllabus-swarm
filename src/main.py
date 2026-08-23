@@ -24,6 +24,7 @@ Usage
   python src/main.py             # interactive prompt
   python src/main.py "ML Basics" --skip-labs  # syllabus only
   python src/main.py "ML Basics" --resume-from output/2026-08-22_153000_ML_Basics
+  python src/main.py "ML Basics" --load-session output/2026-08-22_153000_ML_Basics/intake_session.json
 
 Environment
 -----------
@@ -33,6 +34,7 @@ Environment
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -55,7 +57,11 @@ from crewai import Crew, Process, Task
 from pydantic import BaseModel, Field
 
 from src.agents.intake_specialist import get_intake_specialist
-from src.crews.syllabus_crew import CrewResult, run_syllabus_crew
+from src.crews.syllabus_crew import (
+    CrewResult,
+    OUTPUT_ROOT,
+    run_syllabus_crew,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +117,35 @@ class CourseSpecification(BaseModel):
         "the Intake Specialist skips this question.",
     )
 
+
+class IntakeSession(BaseModel):
+    """Serializable record of a completed intake interview (Issue #9).
+
+    Captures the full intake conversation and its synthesised result,
+    enabling the ``--load-session`` flag to restore a prior intake
+    and bypass the interactive interview entirely.
+    """
+
+    course_name: str = Field(
+        description="Original course name / topic from the user"
+    )
+    questions: str = Field(
+        description="Questions asked by the Intake Specialist agent"
+    )
+    answers: str = Field(
+        description="User's answers to the intake questions"
+    )
+    course_specification: CourseSpecification = Field(
+        description="Synthesised course specification "
+        "(course_context + primary_language)"
+    )
+    timestamp: str = Field(
+        description="ISO 8601 timestamp of when the intake interview completed"
+    )
+    run_id: str = Field(
+        description="Unique run identifier (YYYY-MM-DD_HHMMSS_course_slug)"
+    )
+
 # ---------------------------------------------------------------------------
 # CLI helpers
 # ---------------------------------------------------------------------------
@@ -158,13 +193,32 @@ def _get_resume_dir() -> str | None:
 
 def _clean_cli_flags() -> None:
     """Remove known CLI flags from sys.argv so they don't pollute the course name."""
-    for flag in ("--skip-labs", "--resume-from", "--profile"):
+    for flag in ("--skip-labs", "--resume-from", "--profile", "--load-session"):
         while flag in sys.argv:
             idx = sys.argv.index(flag)
             # Remove the flag and its value (if it has one)
-            if flag in ("--resume-from", "--profile") and idx + 1 < len(sys.argv):
+            if flag in ("--resume-from", "--profile", "--load-session") and idx + 1 < len(sys.argv):
                 sys.argv.pop(idx)  # value
             sys.argv.pop(idx)  # flag
+
+
+def _get_load_session_path() -> str | None:
+    """Extract the --load-session value from CLI arguments, or None."""
+    try:
+        idx = sys.argv.index("--load-session")
+    except ValueError:
+        return None
+    if idx + 1 >= len(sys.argv):
+        print(
+            "❌ --load-session requires a path to an intake_session.json file.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return sys.argv[idx + 1]
+
+# ---------------------------------------------------------------------------
+# Profile loading
+# ---------------------------------------------------------------------------
 
 
 def _get_profile_path() -> str | None:
@@ -282,6 +336,37 @@ def _get_pre_populated_fields(spec: CourseSpecification) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Run-id helpers (duplicated from syllabus_crew.py to keep main self-contained)
+# ---------------------------------------------------------------------------
+
+
+def _sanitize_filename(course_name: str) -> str:
+    """Convert a course name into a safe filesystem name."""
+    return (
+        course_name.strip()
+        .replace(" ", "_")
+        .replace("/", "-")
+        .replace("\\", "-")
+        .replace(":", "")
+        .replace("*", "")
+        .replace("?", "")
+        .replace('"', "")
+        .replace("<", "")
+        .replace(">", "")
+        .replace("|", "")
+    )
+
+
+def _generate_run_id(course_safe_name: str) -> str:
+    """Generate a unique, human-readable run identifier.
+
+    Format: ``YYYY-MM-DD_HHMMSS_<course_safe_name>``
+    """
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
+    return f"{timestamp}_{course_safe_name}"
+
+
+# ---------------------------------------------------------------------------
 # Intake Specialist — interactive interview loop
 # ---------------------------------------------------------------------------
 
@@ -291,7 +376,7 @@ def _run_intake(
     *,
     verbose: bool = False,
     pre_populated: Optional[CourseSpecification] = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, str, str]:
     """Run the Intake Specialist to gather rich course context.
 
     Steps:
@@ -310,9 +395,10 @@ def _run_intake(
 
     Returns
     -------
-    tuple[str, str]
-        A ``(course_context, primary_language)`` pair extracted from the
-        Intake Specialist's structured output.
+    tuple[str, str, str, str]
+        A ``(course_context, primary_language, questions, answers)``
+        tuple.  *questions* and *answers* are empty strings when the
+        intake failed (e.g. LLM error, no user input).
     """
     intake_agent = get_intake_specialist(verbose=verbose)
 
@@ -390,7 +476,7 @@ def _run_intake(
     except Exception as exc:
         print(f"\n⚠️  Intake Specialist failed to generate questions: {exc}")
         print("   Proceeding with bare course name as context.\n")
-        return f"Course Name: {course_name}", "Python"
+        return f"Course Name: {course_name}", "Python", "", ""
 
     # ── Step 2: Display questions and capture answers ────────────────────
     if pre_populated is not None and _get_pre_populated_fields(pre_populated):
@@ -423,7 +509,7 @@ def _run_intake(
 
     if not user_answers:
         print("\n⚠️  No answers provided. Proceeding with bare course name.\n")
-        return f"Course Name: {course_name}", "Python"
+        return f"Course Name: {course_name}", "Python", "", ""
 
     # ── Step 3: Synthesise course context ────────────────────────────────
     # Include pre-populated fields in the synthesis prompt so the LLM
@@ -507,7 +593,7 @@ def _run_intake(
 
         if not course_context:
             print("⚠️  Synthesis produced no output. Using bare course name.\n")
-            return f"Course Name: {course_name}", "Python"
+            return f"Course Name: {course_name}", "Python", "", ""
 
         print(f"{'─' * 60}")
         print("📋  Course Context (sent to Curriculum Architect):")
@@ -516,12 +602,12 @@ def _run_intake(
         print(f"   Primary Language: {primary_language}")
         print(f"{'─' * 60}\n")
 
-        return course_context, primary_language
+        return course_context, primary_language, questions, user_answers
 
     except Exception as exc:
         print(f"\n⚠️  Synthesis failed: {exc}")
         print("   Proceeding with bare course name as context.\n")
-        return f"Course Name: {course_name}", "Python"
+        return f"Course Name: {course_name}", "Python", "", ""
 
 
 # ---------------------------------------------------------------------------
@@ -666,12 +752,21 @@ def main() -> None:
     skip_labs = _should_skip_labs()
     resume_dir = _get_resume_dir()
     profile_path = _get_profile_path()
+    load_session_path = _get_load_session_path()
 
-    # Validate: --skip-labs + --resume-from is a no-op
+    # Validate flag combinations.
     if skip_labs and resume_dir:
         print(
             "❌ --skip-labs and --resume-from cannot be used together "
             "(this would be a no-op).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if load_session_path and resume_dir:
+        print(
+            "❌ --load-session and --resume-from cannot be used together "
+            "(--load-session already provides all context).",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -696,8 +791,87 @@ def main() -> None:
 
     _clean_cli_flags()
 
+    # --- 1a. --load-session path (bypass interactive intake) -------------
+
+    if load_session_path:
+        session_file = Path(load_session_path)
+        if not session_file.exists():
+            print(
+                f"❌ Session file not found: {session_file}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        try:
+            raw_json = session_file.read_text(encoding="utf-8")
+            session = IntakeSession.model_validate_json(raw_json)
+        except Exception as exc:
+            print(
+                f"❌ Failed to load session from {session_file}: {exc}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        course_name = session.course_name
+        course_context = session.course_specification.course_context
+        primary_language = session.course_specification.primary_language
+
+        print(f"\n{'=' * 60}")
+        print(f"  🐝  Syllabus Swarm")
+        print(f"  Course:     {course_name}")
+        print(f"  Model:      Per-agent via OpenRouter (see .env.example)")
+        print(f"  Labs:       {'Skip' if skip_labs else 'Generate'}")
+        print(f"{'=' * 60}\n")
+
+        print("📋  Loaded intake session:")
+        print(f"   Course:     {course_name}")
+        print(f"   Run ID:     {session.run_id}")
+        print(f"   When:       {session.timestamp}")
+        print(f"   Language:   {primary_language}")
+        print()
+
+        print("📋  --load-session mode — skipping interactive intake.\n")
+
+        # Generate a fresh run_id for this pipeline run.
+        safe_name = _sanitize_filename(course_name)
+        run_id = _generate_run_id(safe_name)
+
+        # --- 2. Run the crew ---------------------------------------------
+        try:
+            result = run_syllabus_crew(
+                course_context,
+                course_name=course_name,
+                primary_language=primary_language,
+                verbose=True,
+                skip_labs=skip_labs,
+                run_id=run_id,
+            )
+        except RuntimeError as exc:
+            print(f"\n❌  Fatal Runtime Error: {exc}", file=sys.stderr)
+            print(
+                "   → Check that OPENROUTER_API_KEY is set in .env.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        except Exception as exc:
+            print(f"\n❌  Fatal Unexpected Error: {exc}", file=sys.stderr)
+            sys.exit(3)
+
+        # --- 3. Print summary --------------------------------------------
+        _print_summary(result, course_name)
+        return
+
+    # --- 1b. Normal intake flow ------------------------------------------
+
     course_name = _gather_course_name()
     course_name = _validate_name(course_name)
+
+    # Compute run_id *before* the intake so we can save the session
+    # inside the same run directory the crew will use later.
+    safe_name = _sanitize_filename(course_name)
+    run_id = _generate_run_id(safe_name)
+    run_dir = OUTPUT_ROOT / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'=' * 60}")
     print(f"  🐝  Syllabus Swarm")
@@ -705,8 +879,6 @@ def main() -> None:
     print(f"  Model:      Per-agent via OpenRouter (see .env.example)")
     if resume_dir:
         print(f"  Resume:     {resume_dir}")
-    if profile_path:
-        print(f"  Profile:    {profile_path}")
     print(f"  Labs:       {'Skip' if skip_labs else 'Generate'}")
     print(f"{'=' * 60}\n")
 
@@ -716,25 +888,61 @@ def main() -> None:
         course_context = f"Course Name: {course_name}"
         primary_language = "Python"
         print("📋  Resume mode — skipping Intake Specialist.\n")
+        questions = ""
+        answers = ""
     else:
-        course_context, primary_language = _run_intake(
+        (
+            course_context,
+            primary_language,
+            questions,
+            answers,
+        ) = _run_intake(
             course_name,
             verbose=True,
             pre_populated=pre_populated,
         )
 
+    # --- 2a. Auto-save intake session (Issue #9) -------------------------
+    if questions and answers:
+        # Only persist when the intake was fully successful (real
+        # questions generated + user provided answers).
+        session = IntakeSession(
+            course_name=course_name,
+            questions=questions,
+            answers=answers,
+            course_specification=CourseSpecification(
+                course_context=course_context,
+                primary_language=primary_language,
+            ),
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            run_id=run_id,
+        )
+        session_path = run_dir / "intake_session.json"
+        try:
+            session_path.write_text(
+                session.model_dump_json(indent=2), encoding="utf-8"
+            )
+            print(f"💾  Intake session saved to: {session_path}\n")
+        except OSError as exc:
+            print(f"⚠️  Could not save intake session: {exc}\n")
+
     # --- 3. Run the crew -------------------------------------------------
     try:
         result = run_syllabus_crew(
             course_context,
+            course_name=course_name,
             primary_language=primary_language,
             verbose=True,
             skip_labs=skip_labs,
             resume_dir=resume_dir,
+            run_id=run_id,
         )
     except RuntimeError as exc:
         print(f"\n❌  Fatal Runtime Error: {exc}", file=sys.stderr)
-        print("   → Check that OPENROUTER_API_KEY is set in .env.", file=sys.stderr)
+        print(
+            "   → Check that OPENROUTER_API_KEY is set in .env.",
+            file=sys.stderr,
+        )
         sys.exit(2)
     except Exception as exc:
         print(f"\n❌  Fatal Unexpected Error: {exc}", file=sys.stderr)
@@ -742,7 +950,5 @@ def main() -> None:
 
     # --- 4. Print summary ------------------------------------------------
     _print_summary(result, course_name)
-
-
 if __name__ == "__main__":
     main()

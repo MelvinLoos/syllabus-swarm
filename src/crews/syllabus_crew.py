@@ -180,6 +180,7 @@ def run_syllabus_crew(
     lab_dev_agent: Optional[Agent] = None,
     skip_labs: bool = False,
     resume_dir: str | Path | None = None,
+    run_id: str | None = None,
 ) -> CrewResult:
     """Run both agents sequentially and return a full result summary.
 
@@ -279,8 +280,14 @@ def run_syllabus_crew(
 
     else:
         # ── Fresh run: create new run directory ────────────────────────
-        run_id = _generate_run_id(safe_name)
-        run_dir = OUTPUT_ROOT / run_id
+        if run_id is not None:
+            # Use the run_id provided by the caller (e.g. main.py for
+            # intake-session persistence).  The directory should already
+            # exist at this point.
+            _run_id = run_id
+        else:
+            _run_id = _generate_run_id(safe_name)
+        run_dir = OUTPUT_ROOT / _run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
         syllabus_dir = run_dir / "syllabus"
