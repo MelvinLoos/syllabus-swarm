@@ -622,7 +622,7 @@ def _run_intake(
     verbose: bool = False,
     pre_populated: CourseSpecification | None = None,
     prerequisites: str | None = None,
-) -> tuple[str, str, str, str]:
+) -> tuple[str, str, str, str, str | None, str | None, int | None, str | None]:
     """Run the Intake Specialist to gather rich course context.
 
     Steps:
@@ -638,6 +638,11 @@ def _run_intake(
         The initial course name / topic from the user.
     verbose : bool
         Enable detailed agent logging.
+    pre_populated : CourseSpecification or None
+        Pre-populated constraints from a cohort profile.  When provided,
+        structured fields (grading_scale, student_pathway, year_level,
+        hardware_constraints) are used as fallback values if the LLM
+        synthesis does not populate them.
     prerequisites : str or None
         Optional prerequisite context from a previous course (via
         ``--builds-upon``).  When provided, injected into the question
@@ -646,8 +651,9 @@ def _run_intake(
 
     Returns
     -------
-    tuple[str, str, str, str]
-        A ``(course_context, primary_language, questions, answers)``
+    tuple[str, str, str, str, str | None, str | None, int | None, str | None]
+        A ``(course_context, primary_language, questions, answers,
+        grading_scale, student_pathway, year_level, hardware_constraints)``
         tuple.  *questions* and *answers* are empty strings when the
         intake failed (e.g. LLM error, no user input).
     """
@@ -738,7 +744,7 @@ def _run_intake(
     except Exception as exc:
         print(f"\n⚠️  Intake Specialist failed to generate questions: {exc}")
         print("   Proceeding with bare course name as context.\n")
-        return f"Course Name: {course_name}", "Python", "", ""
+        return f"Course Name: {course_name}", "Python", "", "", None, None, None, None
 
     # ── Step 2: Display questions and capture answers ────────────────────
     if pre_populated is not None and _get_pre_populated_fields(pre_populated):
@@ -771,7 +777,7 @@ def _run_intake(
 
     if not user_answers:
         print("\n⚠️  No answers provided. Proceeding with bare course name.\n")
-        return f"Course Name: {course_name}", "Python", "", ""
+        return f"Course Name: {course_name}", "Python", "", "", None, None, None, None
 
     # ── Step 3: Synthesise course context ────────────────────────────────
     # Include pre-populated fields AND the full profile context in the
@@ -860,16 +866,35 @@ def _run_intake(
             spec: CourseSpecification = synthesis_result.pydantic
             course_context = spec.course_context.strip()
             primary_language = spec.primary_language.strip()
+            grading_scale = spec.grading_scale
+            student_pathway = spec.student_pathway
+            year_level = spec.year_level
+            hardware_constraints = spec.hardware_constraints
         else:
             # Fallback: parse from raw text if pydantic output unavailable.
             course_context = (
                 synthesis_result.raw if hasattr(synthesis_result, "raw") else str(synthesis_result)
             ).strip()
             primary_language = "Python"
+            grading_scale = None
+            student_pathway = None
+            year_level = None
+            hardware_constraints = None
+
+        # Fall back to pre-populated values when the LLM didn't populate them.
+        if pre_populated is not None:
+            if grading_scale is None:
+                grading_scale = pre_populated.grading_scale
+            if student_pathway is None:
+                student_pathway = pre_populated.student_pathway
+            if year_level is None:
+                year_level = pre_populated.year_level
+            if hardware_constraints is None:
+                hardware_constraints = pre_populated.hardware_constraints
 
         if not course_context:
             print("⚠️  Synthesis produced no output. Using bare course name.\n")
-            return f"Course Name: {course_name}", "Python", "", ""
+            return f"Course Name: {course_name}", "Python", "", "", None, None, None, None
 
         print(f"{'─' * 60}")
         print("📋  Course Context (sent to Curriculum Architect):")
@@ -878,12 +903,21 @@ def _run_intake(
         print(f"   Primary Language: {primary_language}")
         print(f"{'─' * 60}\n")
 
-        return course_context, primary_language, questions, user_answers
+        return (
+            course_context,
+            primary_language,
+            questions,
+            user_answers,
+            grading_scale,
+            student_pathway,
+            year_level,
+            hardware_constraints,
+        )
 
     except Exception as exc:
         print(f"\n⚠️  Synthesis failed: {exc}")
         print("   Proceeding with bare course name as context.\n")
-        return f"Course Name: {course_name}", "Python", "", ""
+        return f"Course Name: {course_name}", "Python", "", "", None, None, None, None
 
 
 # ---------------------------------------------------------------------------
@@ -1217,6 +1251,10 @@ def main(argv: list[str] | None = None) -> None:
             primary_language,
             questions,
             answers,
+            grading_scale,
+            student_pathway,
+            year_level,
+            hardware_constraints,
         ) = _run_intake(
             course_name,
             verbose=True,
@@ -1235,6 +1273,10 @@ def main(argv: list[str] | None = None) -> None:
             course_specification=CourseSpecification(
                 course_context=course_context,
                 primary_language=primary_language,
+                grading_scale=grading_scale,
+                student_pathway=student_pathway,
+                year_level=year_level,
+                hardware_constraints=hardware_constraints,
             ),
             timestamp=datetime.now(UTC).isoformat(),
             run_id=run_id,
