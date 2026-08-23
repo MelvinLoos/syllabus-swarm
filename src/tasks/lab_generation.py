@@ -181,6 +181,7 @@ _TIER_DEFINITIONS: str = (
     "### Tier 1 — Foundations\n"
     "**Focus:** Syntax drills, basic patterns, and single-file exercises.\n\n"
     "- Each lab must be a single `{ext}` file (plus README).\n"
+    "- At least 3 labs for this tier.\n"
     "- Topics: variables, control flow, functions, data structures (lists,\n"
     "  dicts/objects, sets), file I/O, error handling, and basic OOP.\n"
     "- Code complexity: ≤ 150 lines per solution file.\n"
@@ -192,6 +193,7 @@ _TIER_DEFINITIONS: str = (
     "**Focus:** Multi-file projects, APIs, and data processing.\n\n"
     "- Each lab must span 3–5 files (plus README) organised as a coherent\n"
     "  mini-project.\n"
+    "- At least 3 labs for this tier.\n"
     "- Topics: REST API consumption, database CRUD, data pipelines (ETL),\n"
     "  CLI tools, web scraping, testing, and packaging.\n"
     "- Must include a `{dep_file}` listing all dependencies.\n"
@@ -203,6 +205,7 @@ _TIER_DEFINITIONS: str = (
     "**Focus:** System design, microservices, and deployment.\n\n"
     "- Each lab must span 5–10 files representing a service-oriented\n"
     "  architecture.\n"
+    "- At least 3 labs for this tier.\n"
     "- Topics: message queues (RabbitMQ/Redis), containerisation (Docker),\n"
     "  service orchestration (docker-compose), database sharding/replication,\n"
     "  CI/CD pipelines, cloud deployment (AWS/GCP/Azure basics), and\n"
@@ -308,33 +311,41 @@ _TOOL_USAGE_MANDATE: str = (
     "`write-labs` command).  You MUST use this tool to generate and save "
     "the actual code files for Tier 1, Tier 2, and Tier 3 to disk.\n\n"
     "**Workflow:**\n"
-    "1. Generate the labs for **Tier 1** first.  Call `output_export_tool` "
-    "with `command=\"write-labs\"`, passing the `course_name`, `tier` "
-    "(e.g. `\"tier1_foundations\"`), and a `files` dict mapping relative "
-    "paths to file contents.\n"
-    "2. After Tier 1 files are written, move to **Tier 2** and repeat.\n"
-    "3. After Tier 2, move to **Tier 3** and repeat.\n"
-    "4. Once ALL files for ALL tiers are successfully written to disk, "
-    "your FINAL textual response to this task should ONLY be the top-level "
-    "index Markdown (`README.md`) summarising all the labs with one-line "
-    "descriptions.\n\n"
-    "**Example tool call:**\n"
+    "1. Read the ``run_id`` from the course context provided at the start "
+    "of this task description (look for ``**Run ID:**``).  You MUST include "
+    "this ``run_id`` in EVERY tool call — this ensures files land in the "
+    "correct per-run directory and do NOT leak into the shared global "
+    "output folder.\n"
+    "2. Generate the labs for **Tier 1** first.  Call `output_export_tool` "
+    "with `command=\"write-labs\"`, passing `course_name`, `tier` "
+    "(e.g. `\"tier1_foundations\"`), `files` (a dict mapping relative "
+    "paths to file contents), and the `run_id`.\n"
+    "3. After Tier 1 files are written, move to **Tier 2** and repeat.\n"
+    "4. After Tier 2, move to **Tier 3** and repeat.\n"
+    "5. Once ALL files for ALL tiers are successfully written to disk, "
+    "produce your final textual response: a complete, well-structured "
+    "Markdown README that serves as the top-level index for all labs.  "
+    "It must include the course title, a brief overview, and a numbered "
+    "list of every lab with its tier and a one-line description.\n\n"
+    "**Example tool call (you MUST follow this exact structure):**\n"
     "```json\n"
     "{{\n"
     '  "command": "write-labs",\n'
     '  "course_name": "Javascript OOP Basics",\n'
     '  "tier": "tier1_foundations",\n'
+    '  "run_id": "2026-08-23_120000_Javascript_OOP_Basics",\n'
     '  "files": {{\n'
-    '    "starter/README.md": "# Lab 1: ...",\n'
-    '    "starter/lab1_variables{ext}": "// TODO(t1): ...",\n'
-    '    "solution/README.md": "# Lab 1 Solution: ...",\n'
-    '    "solution/lab1_variables{ext}": "// Complete solution ..."\n'
+    '    "starter/README.md": "# Lab 1: Variables and Data Types\\n\\n## 🎯 Learning Objectives\\n...",\n'
+    '    "starter/lab1_variables{ext}": "// TODO(t1): Declare a constant...",\n'
+    '    "solution/README.md": "# Lab 1 Solution: Variables and Data Types\\n\\n...",\n'
+    '    "solution/lab1_variables{ext}": "// Complete working solution with comments\\nconst PI = 3.14159;\\n..."\n'
     "  }}\n"
     "}}\n"
     "```\n\n"
     "**Do NOT** attempt to write all file contents inline in your final "
-    "text response.  Use the tool for every file.  Your text response "
-    "should be ONLY the top-level index after all files are saved.\n"
+    "text response.  Use the tool for every file.  Your final text response "
+    "must be a real, detailed top-level README index — NOT a placeholder "
+    "like \"No more tool calls\" or \"Just the final answer\".\n"
 )
 
 # ---------------------------------------------------------------------------
@@ -349,6 +360,7 @@ def create_lab_generation_task(
     syllabus_context: str | None = None,
     topic_focus: str | None = None,
     language: str = "Python",
+    run_id: str | None = None,
     verbose: bool = False,
 ) -> Task:
     """Create a CrewAI Task that generates tiered coding labs from a syllabus.
@@ -371,6 +383,11 @@ def create_lab_generation_task(
         The primary programming language for the labs.  Defaults to
         ``"Python"``.  Determines file extensions, linters, type checkers,
         and dependency-file names used throughout the task instructions.
+    run_id : str or None
+        The unique run identifier (e.g. ``"2026-08-23_120000_Course_Name"``).
+        When provided, it is injected into the task description so the agent
+        can pass it through to every ``write-labs`` tool call, ensuring files
+        land in the correct per-run output directory.
     verbose : bool
         Enable detailed task execution logging.
 
@@ -414,6 +431,12 @@ def create_lab_generation_task(
         f"**Course Name:** {course_name}\n"
         f"**Primary Language:** {language}\n",
     ]
+
+    if run_id:
+        description_parts.append(
+            f"\n**Run ID:** {run_id}\n"
+            f"(MUST include this ``run_id`` in every `write-labs` tool call)\n"
+        )
 
     if syllabus_context:
         description_parts.append(

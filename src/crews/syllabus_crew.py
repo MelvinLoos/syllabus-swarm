@@ -242,6 +242,7 @@ def run_syllabus_crew(
     syllabus_error: str | None = None
     syllabus_raw: str = ""
     syllabus_path: Path
+    _active_run_id: str  # Always populated below — used for lab task context.
 
     if resume_dir is not None:
         resume_path = Path(resume_dir)
@@ -270,8 +271,8 @@ def run_syllabus_crew(
 
         # When resuming, we still create a fresh run directory for the
         # labs output (so each resume produces its own timestamped output).
-        run_id = _generate_run_id(safe_name)
-        run_dir = OUTPUT_ROOT / run_id
+        _active_run_id = _generate_run_id(safe_name)
+        run_dir = OUTPUT_ROOT / _active_run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
         labs_dir = run_dir / "labs"
@@ -284,10 +285,10 @@ def run_syllabus_crew(
             # Use the run_id provided by the caller (e.g. main.py for
             # intake-session persistence).  The directory should already
             # exist at this point.
-            _run_id = run_id
+            _active_run_id = run_id
         else:
-            _run_id = _generate_run_id(safe_name)
-        run_dir = OUTPUT_ROOT / _run_id
+            _active_run_id = _generate_run_id(safe_name)
+        run_dir = OUTPUT_ROOT / _active_run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
         syllabus_dir = run_dir / "syllabus"
@@ -367,6 +368,7 @@ def run_syllabus_crew(
                 course_name=course_name,
                 syllabus_context=syllabus_raw,
                 language=primary_language,
+                run_id=_active_run_id,
                 verbose=verbose,
             )
 
