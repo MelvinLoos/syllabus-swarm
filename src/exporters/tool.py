@@ -267,19 +267,35 @@ class OutputExportTool(BaseTool):
         run_id = str(params.get("run_id", "") or "")
 
         files_raw = params.get("files")
-        if not files_raw or not isinstance(files_raw, dict):
+        if not files_raw:
+            return _err(
+                "Missing or invalid 'files' parameter.  "
+                "Expected a dict of {relative_path: content}."
+            )
+
+        # Auto-parse JSON strings — CrewAI agents often pass the files
+        # mapping as a JSON-encoded string rather than a native dict.
+        if isinstance(files_raw, str):
+            try:
+                files_raw = json.loads(files_raw)
+            except (json.JSONDecodeError, TypeError):
+                return _err(
+                    "Invalid 'files' parameter: could not parse JSON string.  "
+                    "Expected a JSON object mapping relative paths to content."
+                )
+
+        if not isinstance(files_raw, dict):
             return _err(
                 "Missing or invalid 'files' parameter.  "
                 "Expected a dict of {relative_path: content}."
             )
 
         files_dict: Dict[str, Any] = files_raw
-        safe_course = _sanitize_filename(course_name)
 
         if run_id:
-            base = _PROJECT_ROOT / "output" / run_id / "labs" / safe_course / tier
+            base = _PROJECT_ROOT / "output" / run_id / "labs" / tier
         else:
-            base = OUTPUT_PATHS.labs_dir / safe_course / tier
+            base = OUTPUT_PATHS.labs_dir / tier
 
         written = write_directory_tree(base, files_dict, force=self.force)
         return _ok(

@@ -361,6 +361,7 @@ def create_lab_generation_task(
     topic_focus: str | None = None,
     language: str = "Python",
     run_id: str | None = None,
+    tier: str | None = None,
     verbose: bool = False,
 ) -> Task:
     """Create a CrewAI Task that generates tiered coding labs from a syllabus.
@@ -388,6 +389,11 @@ def create_lab_generation_task(
         When provided, it is injected into the task description so the agent
         can pass it through to every ``write-labs`` tool call, ensuring files
         land in the correct per-run output directory.
+    tier : str or None
+        When provided (e.g. ``"tier1_foundations"``), limits the task to
+        generating labs for that single tier only.  This reduces the prompt
+        size and allows the LLM to focus on one tier at a time.  When
+        ``None``, generates all three tiers (legacy behaviour).
     verbose : bool
         Enable detailed task execution logging.
 
@@ -424,10 +430,41 @@ def create_lab_generation_task(
     code_quality = _CODE_QUALITY_MANDATE.format(**fmt)
     tool_usage = _TOOL_USAGE_MANDATE.format(**fmt)
 
+    # ── Determine tier scope ───────────────────────────────────────────
+    if tier:
+        # Single-tier mode: extract only the relevant tier definition.
+        tier_label = {
+            "tier1_foundations": "Tier 1 — Foundations",
+            "tier2_application": "Tier 2 — Application",
+            "tier3_architecture": "Tier 3 — Architecture",
+        }.get(tier, tier)
+
+        # Extract just the relevant tier section from the full definitions.
+        tier_section = ""
+        for line in tier_definitions.split("\n"):
+            if line.startswith("### ") and tier_label not in line and tier_section:
+                break
+            if tier_section or line.startswith(f"### {tier_label}"):
+                tier_section += line + "\n"
+
+        tier_scope = (
+            f"## 🔺  Scope — {tier_label} ONLY\n\n"
+            f"You are generating labs for **{tier_label}** only.  "
+            f"Do NOT generate labs for other tiers.\n\n"
+            f"{tier_section}\n"
+        )
+    else:
+        tier_scope = (
+            "\n\nYour task is to design a complete set of self-contained coding "
+            "labs organised into three progressive tiers.  Each tier must have "
+            "**at least 3 labs**, and every lab must include both a **starter/** "
+            "scaffold and a **solution/** reference implementation.\n\n"
+            f"{tier_definitions}\n"
+        )
+
     # ---- Build the description ------------------------------------------
     description_parts: list[str] = [
-        f"Generate a comprehensive set of tiered coding labs for the "
-        f"following course:\n\n"
+        f"Generate tiered coding labs for the following course:\n\n"
         f"**Course Name:** {course_name}\n"
         f"**Primary Language:** {language}\n",
     ]
@@ -439,8 +476,12 @@ def create_lab_generation_task(
         )
 
     if syllabus_context:
+        # Truncate syllabus to ~3000 chars to keep prompt manageable.
+        ctx = syllabus_context
+        if len(ctx) > 4000:
+            ctx = ctx[:4000] + "\n\n[... syllabus truncated for length ...]\n"
         description_parts.append(
-            f"\n**Syllabus Context:**\n\n{syllabus_context}\n"
+            f"\n**Syllabus Context:**\n\n{ctx}\n"
         )
 
     if topic_focus:
@@ -449,101 +490,39 @@ def create_lab_generation_task(
         )
 
     description_parts.append(
-        "\n\nYour task is to design a complete set of self-contained coding "
-        "labs organised into three progressive tiers.  Each tier must have "
-        "**at least 3 labs**, and every lab must include both a **starter/** "
-        "scaffold and a **solution/** reference implementation.\n\n"
-        "_TOOL_USAGE_MANDATE_\n\n"
-        "_TIER_DEFINITIONS_\n\n"
-        "_DIRECTORY_STRUCTURE_REQUIREMENT_\n\n"
-        "_README_TEMPLATE_REQUIREMENT_\n\n"
-        "_HUMANICS_LAB_MANDATE_\n\n"
-        "_CODE_QUALITY_MANDATE_\n"
+        f"\n\n{tier_scope}\n"
+        f"{tool_usage}\n\n"
+        f"{directory_structure}\n\n"
+        f"{readme_template}\n\n"
+        f"{_HUMANICS_LAB_MANDATE}\n\n"
+        f"{code_quality}\n"
     )
 
-    # Inject the full mandate text (not references).
-    description = (
-        "".join(description_parts)
-        .replace("_TOOL_USAGE_MANDATE_", tool_usage)
-        .replace("_TIER_DEFINITIONS_", tier_definitions)
-        .replace(
-            "_DIRECTORY_STRUCTURE_REQUIREMENT_",
-            directory_structure,
-        )
-        .replace(
-            "_README_TEMPLATE_REQUIREMENT_",
-            readme_template,
-        )
-        .replace("_HUMANICS_LAB_MANDATE_", _HUMANICS_LAB_MANDATE)
-        .replace("_CODE_QUALITY_MANDATE_", code_quality)
-    )
+    description = "".join(description_parts)
 
     # ---- Build the expected_output --------------------------------------
-    expected_output = (
-        f"## 🔴 CRITICAL: You MUST use the `output_export_tool`\n\n"
-        f"You have access to the `output_export_tool` with the `write-labs` "
-        f"command.  You MUST use this tool to generate and save the actual "
-        f"code files for Tier 1, Tier 2, and Tier 3 to disk.  Do this "
-        f"step-by-step — generate one tier at a time, write its files via "
-        f"the tool, then move to the next tier.\n\n"
-        f"**Once all files are successfully written**, your FINAL textual "
-        f"response must be a complete, well-structured Markdown README that "
-        f"serves as the top-level index for all labs.  It must include the "
-        f"course title, a brief overview, and a numbered list of every lab "
-        f"with its tier and a one-line description.  Do NOT produce a "
-        f"placeholder like \"No more tool calls\" — write a real README.\n\n"
-        f"---\n\n"
-        f"A complete, self-contained set of tiered **{language}** coding "
-        f"labs for the course **{course_name}**.  The output must:\n\n"
-        f"1. Organise all labs under `output/labs/<course_name>/` using the "
-        f"exact directory structure specified above (tier1_foundations, "
-        f"tier2_application, tier3_architecture).\n\n"
-        f"2. **Tier 1 — Foundations** (≥3 labs): Single-file exercises "
-        f"covering syntax drills, basic patterns, and algorithmic thinking.  "
-        f"Each lab: one `{ext}` starter file with ≥5 TODO markers, one "
-        f"`{ext}` solution file with full comments, and a README.md in both "
-        f"directories.  Topics should ladder from simple (variables, loops) "
-        f"to intermediate (functions, file I/O, error handling).\n\n"
-        f"3. **Tier 2 — Application** (≥3 labs): Multi-file mini-projects "
-        f"spanning 3–5 files each.  Must include at least one REST API "
-        f"consumer, one data-processing pipeline (ETL), and one CLI tool.  "
-        f"Each lab must ship with a `{dep_file}` and a `README.md` in "
-        f"both starter/ and solution/.  Starter files must have TODO markers "
-        f"in every file; solutions must be fully runnable.\n\n"
-        f"4. **Tier 3 — Architecture** (≥3 labs): Service-oriented systems "
-        f"with 5–10 files each.  Must include at least one microservices "
-        f"system with Docker and docker-compose, one CI/CD pipeline "
-        f"definition, and one observability/monitoring setup.  Each lab "
-        f"must ship with `Dockerfile`, `docker-compose.yml`, `Makefile`, "
-        f"and `README.md` in both starter/ and solution/.\n\n"
-        f"5. **README quality:** Every lab's README must follow the mandated "
-        f"template (Learning Objectives, Key Concepts, Prerequisites, "
-        f"Getting Started, Project Structure, Lab Instructions, Humanics "
-        f"Reflection, Additional Resources).  The Humanics Reflection "
-        f"section must contain at least 3 thought-provoking questions.\n\n"
-        f"6. **Code quality:** All solution code must use {lang_version} "
-        f"idioms, module-level documentation, function documentation, and "
-        f"pass `{linter}`.  TODO markers must use the "
-        f"`# TODO(<tier>):` format with actionable instructions.\n\n"
-        f"7. **Self-contained:** Every lab must be independently cloneable "
-        f"and runnable.  A student should need only {lang_version}, the "
-        f"documented dependencies, and `docker` (for Tier 3) to complete "
-        f"every exercise.\n\n"
-        f"The first file in the output must be:\n\n"
-        f"`output/labs/{course_name.lower().replace(' ', '_')}/README.md`\n"
-        f"— a top-level index listing all labs with one-line descriptions.\n"
-    )
+    if tier:
+        expected_output = (
+            f"## 🔴 CRITICAL: You MUST use the `output_export_tool`\n\n"
+            f"Use the `output_export_tool` with `command=\"write-labs\"` to "
+            f"write ALL lab files for **{tier}** to disk.  Include at least "
+            f"3 labs with starter/ and solution/ directories.\n\n"
+            f"**Once all files are written**, produce a Markdown summary "
+            f"listing each lab with its tier and a one-line description.\n"
+        )
+    else:
+        expected_output = (
+            f"## 🔴 CRITICAL: You MUST use the `output_export_tool`\n\n"
+            f"You have access to the `output_export_tool` with the `write-labs` "
+            f"command.  You MUST use this tool to generate and save the actual "
+            f"code files for Tier 1, Tier 2, and Tier 3 to disk.\n\n"
+            f"**Once all files are successfully written**, your FINAL textual "
+            f"response must be a complete, well-structured Markdown README that "
+            f"serves as the top-level index for all labs.\n"
+        )
 
     # ---- Compute the output file path -----------------------------------
-    safe_name: str = (
-        course_name.strip()
-        .replace(" ", "_")
-        .replace("/", "-")
-        .replace(":", "-")
-        .replace("&", "and")
-        .lower()
-    )
-    output_file: str = f"output/labs/{safe_name}/README.md"
+    output_file: str = "output/labs/README.md"
 
     # ---- Assemble and return the Task -----------------------------------
     return Task(
