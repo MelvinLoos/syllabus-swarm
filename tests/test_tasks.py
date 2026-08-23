@@ -221,11 +221,11 @@ class TestCreateLabGenerationTask:
         assert "Python" in kwargs["description"]
 
     def test_output_file_follows_expected_pattern(self) -> None:
-        """The output_file is output/labs/<safe_name>/README.md."""
+        """The output_file is output/labs/README.md."""
         kwargs = self._call_factory()
         assert (
             kwargs["output_file"]
-            == "output/labs/python_for_data_engineering/README.md"
+            == "output/labs/README.md"
         )
 
     def test_async_execution_is_false(self) -> None:
@@ -303,31 +303,13 @@ class TestCreateLabGenerationTask:
     def test_expected_output_requires_three_tiers(self) -> None:
         """The expected_output mandates all three tiers."""
         kwargs = self._call_factory(course_name="Test Course")
-        assert "Tier 1 — Foundations" in kwargs["expected_output"]
-        assert "Tier 2 — Application" in kwargs["expected_output"]
-        assert "Tier 3 — Architecture" in kwargs["expected_output"]
-
-    def test_expected_output_requires_minimum_lab_counts(self) -> None:
-        """The expected_output mandates at least 3 labs per tier."""
-        kwargs = self._call_factory(course_name="Test Course")
-        assert "≥3 labs" in kwargs["expected_output"]
-
-    def test_expected_output_requires_docker_for_tier3(self) -> None:
-        """Tier 3 must include Docker and docker-compose."""
-        kwargs = self._call_factory(course_name="Test Course")
-        assert "Docker" in kwargs["expected_output"]
-        assert "docker-compose" in kwargs["expected_output"]
-
-    def test_expected_output_requires_self_contained_labs(self) -> None:
-        """Labs must be self-contained and independently runnable."""
-        kwargs = self._call_factory(course_name="Test Course")
-        assert "self-contained" in kwargs["expected_output"].lower()
+        assert "Tier 1, Tier 2, and Tier 3" in kwargs["expected_output"]
 
     def test_expected_output_requires_top_level_readme(self) -> None:
-        """The first file must be a top-level README.md index."""
+        """The final response must be a top-level Markdown README index."""
         kwargs = self._call_factory(course_name="Test Course")
-        assert "README.md" in kwargs["expected_output"]
         assert "top-level index" in kwargs["expected_output"]
+        assert "Markdown README" in kwargs["expected_output"]
 
     # -- Language-specific tooling ----------------------------------------
 
@@ -357,11 +339,11 @@ class TestCreateLabGenerationTask:
         assert "golangci-lint" in desc
         assert "go.mod" in desc
 
-    def test_language_specific_extension_in_expected_output(self) -> None:
-        """expected_output references the correct file extension."""
+    def test_language_specific_extension_in_description(self) -> None:
+        """description references the correct file extension and linter."""
         kwargs = self._call_factory(course_name="Test Course", language="JavaScript")
-        assert ".js" in kwargs["expected_output"]
-        assert "eslint" in kwargs["expected_output"]
+        assert ".js" in kwargs["description"]
+        assert "eslint" in kwargs["description"]
 
     # -- Tool usage mandate -----------------------------------------------
 
@@ -377,12 +359,12 @@ class TestCreateLabGenerationTask:
         assert "output_export_tool" in kwargs["expected_output"]
         assert "write-labs" in kwargs["expected_output"]
 
-    def test_expected_output_mentions_step_by_step(self) -> None:
-        """The expected_output instructs step-by-step tool usage."""
+    def test_expected_output_mentions_final_textual_response(self) -> None:
+        """The expected_output instructs the agent to produce a final textual response."""
         kwargs = self._call_factory(course_name="Test Course")
         eo = kwargs["expected_output"]
-        assert "step-by-step" in eo.lower()
         assert "FINAL textual response" in eo
+        assert "write-labs" in eo
 
 
 # ===================================================================

@@ -20,9 +20,7 @@ from pydantic import ValidationError
 
 from src.main import (
     CourseSpecification,
-    _clean_cli_flags,
     _get_pre_populated_fields,
-    _get_profile_path,
     _inject_profile,
     _load_profile,
 )
@@ -503,38 +501,6 @@ class TestGetPrePopulatedFields:
 
 
 # ===================================================================
-# _get_profile_path — CLI flag extraction
-# ===================================================================
-
-
-class TestGetProfilePath:
-    """Tests for the _get_profile_path helper."""
-
-    def test_returns_none_when_no_flag(self) -> None:
-        """Returns None when --profile is not in sys.argv."""
-        with patch.object(sys, "argv", ["main.py", "Course Name"]):
-            assert _get_profile_path() is None
-
-    def test_extracts_profile_path(self) -> None:
-        """Returns the path after --profile."""
-        with patch.object(sys, "argv", [
-            "main.py", "--profile",
-            "config/profiles/program1_profile.yaml", "Course"
-        ]):
-            assert _get_profile_path() == "config/profiles/program1_profile.yaml"
-
-    def test_exits_when_no_path_after_flag(self) -> None:
-        """Exits with code 1 when --profile has no argument."""
-        with patch.object(sys, "argv", ["main.py", "--profile"]):
-            with pytest.raises(SystemExit) as exc:
-                _get_profile_path()
-            assert exc.value.code == 1
-
-
-# ===================================================================
-# _clean_cli_flags — includes --profile
-# ===================================================================
-# ===================================================================
 # _run_intake — pre-populated skip behaviour (pure helpers, no LLM)
 # ===================================================================
 
@@ -664,33 +630,3 @@ class TestEndToEndProfileFlow:
         assert spec2.hardware_constraints == spec1.hardware_constraints
 
 
-class TestCleanCliFlags:
-    """Tests for _clean_cli_flags handling --profile."""
-
-    def test_removes_profile_flag_and_value(self) -> None:
-        """--profile and its value are removed from sys.argv."""
-        argv = [
-            "main.py", "--profile",
-            "config/profiles/program1_profile.yaml",
-            "Course Name",
-        ]
-        with patch.object(sys, "argv", argv.copy()):
-            _clean_cli_flags()
-            assert "--profile" not in sys.argv
-            assert "config/profiles/program1_profile.yaml" not in sys.argv
-
-    def test_removes_multiple_flags(self) -> None:
-        """--profile, --skip-labs, and --resume-from are all cleaned."""
-        argv = [
-            "main.py", "--skip-labs", "--profile",
-            "config/profiles/program1_profile.yaml",
-            "--resume-from", "/tmp/some/dir", "Course Name",
-        ]
-        with patch.object(sys, "argv", argv.copy()):
-            _clean_cli_flags()
-            assert "--skip-labs" not in sys.argv
-            assert "--profile" not in sys.argv
-            assert "config/profiles/program1_profile.yaml" not in sys.argv
-            assert "--resume-from" not in sys.argv
-            assert "/tmp/some/dir" not in sys.argv
-            assert "Course Name" in sys.argv

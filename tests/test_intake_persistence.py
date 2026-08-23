@@ -21,7 +21,6 @@ from src.main import (
     CourseSpecification,
     IntakeSession,
     _generate_run_id,
-    _get_load_session_path,
     _sanitize_filename,
 )
 
@@ -216,95 +215,6 @@ class TestIntakeSessionRoundTrip:
             IntakeSession.model_validate_json(
                 wrong_file.read_text(encoding="utf-8")
             )
-
-
-# ---------------------------------------------------------------------------
-# --load-session CLI flag tests
-# ---------------------------------------------------------------------------
-
-
-class TestLoadSessionCLI:
-    """The --load-session flag extracts the path and bypasses intake."""
-
-    def test_get_load_session_path_extracts_value(self, monkeypatch) -> None:
-        test_path = "/tmp/output/intake_session.json"
-        monkeypatch.setattr(
-            sys, "argv", ["src/main.py", "--load-session", test_path]
-        )
-        result = _get_load_session_path()
-        assert result == test_path
-
-    def test_get_load_session_path_none_when_absent(self, monkeypatch) -> None:
-        monkeypatch.setattr(sys, "argv", ["src/main.py", "Some Course"])
-        assert _get_load_session_path() is None
-
-    def test_get_load_session_path_exits_when_no_value(self, monkeypatch) -> None:
-        monkeypatch.setattr(sys, "argv", ["src/main.py", "--load-session"])
-        with pytest.raises(SystemExit) as exc_info:
-            _get_load_session_path()
-        assert exc_info.value.code == 1
-
-    def test_load_session_bypasses_interactive_intake(
-        self, sample_session: IntakeSession, tmp_path: Path, monkeypatch
-    ) -> None:
-        session_file = tmp_path / "intake_session.json"
-        session_file.write_text(
-            sample_session.model_dump_json(indent=2), encoding="utf-8"
-        )
-        monkeypatch.setattr(
-            sys,
-            "argv",
-            ["src/main.py", "--load-session", str(session_file), "--skip-labs"],
-        )
-        mock_result = MagicMock()
-        mock_result.syllabus_ok = True
-        mock_result.labs_ok = True
-        mock_result.all_succeeded = True
-        mock_result.syllabus_path = tmp_path / "syllabus.md"
-        mock_result.labs_base_path = tmp_path / "labs"
-        mock_result.manifest_path = None
-
-        with patch("src.main.run_syllabus_crew", return_value=mock_result) as mock_crew:
-            with patch("builtins.input") as mock_input:
-                from src.main import main
-                main()
-                mock_input.assert_not_called()
-                mock_crew.assert_called_once()
-                args, kwargs = mock_crew.call_args
-                # course_context is the first positional argument
-                assert (
-                    args[0]
-                    == sample_session.course_specification.course_context
-                )
-                assert kwargs["course_name"] == sample_session.course_name
-                assert (
-                    kwargs["primary_language"]
-                    == sample_session.course_specification.primary_language
-                )
-
-    def test_load_session_nonexistent_file_exits(self, monkeypatch) -> None:
-        monkeypatch.setattr(
-            sys,
-            "argv",
-            ["src/main.py", "--load-session", "/tmp/nonexistent/intake_session.json"],
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            from src.main import main
-            main()
-        assert exc_info.value.code == 1
-
-    def test_load_session_invalid_json_exits(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
-        bad_file = tmp_path / "bad.json"
-        bad_file.write_text("{invalid json", encoding="utf-8")
-        monkeypatch.setattr(
-            sys, "argv", ["src/main.py", "--load-session", str(bad_file)]
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            from src.main import main
-            main()
-        assert exc_info.value.code == 1
 
 
 # ---------------------------------------------------------------------------
