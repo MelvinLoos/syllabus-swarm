@@ -1,5 +1,9 @@
 # syllabus-swarm 🐝
 
+[![CI](https://github.com/MelvinLoos/syllabus-swarm/actions/workflows/ci.yml/badge.svg)](https://github.com/MelvinLoos/syllabus-swarm/actions/workflows/ci.yml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
+
 > A local multi-agent workspace for generating vocational-level software development curriculum.
 
 **syllabus-swarm** uses AI agents (powered by [CrewAI](https://www.crewai.com/) / [LangChain](https://www.langchain.com/)) connected to specialized language models via **OpenRouter** to collaboratively design, develop, and package complete course materials — syllabi, tiered coding labs, and evaluation rubrics.

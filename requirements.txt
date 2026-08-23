@@ -31,5 +31,11 @@ litellm==1.97.0
 # --- Environment Variable Management (.env loader) ---
 python-dotenv==1.2.3
 
+# --- CrewAI Tools (file reading for QA Reviewer) ---
+crewai-tools==1.15.17
+
 # --- Testing ---
 pytest==8.4.2
+
+# --- Linting & Formatting ---
+ruff==0.11.10
