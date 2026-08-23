@@ -34,6 +34,7 @@ Environment
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1199,9 +1200,32 @@ def main(argv: list[str] | None = None) -> None:
         # When resuming, we already have a syllabus — no need for intake.
         course_context = f"Course Name: {course_name}"
         primary_language = "Python"
-        print("📋  Resume mode — skipping Intake Specialist.\n")
         questions = ""
         answers = ""
+
+        # Try to extract primary_language from the saved intake session
+        # so that lab generation uses the correct file extensions/linters.
+        resume_path = Path(resume_dir)
+        session_file = resume_path / "intake_session.json"
+        if session_file.exists():
+            try:
+                raw = session_file.read_text(encoding="utf-8")
+                session_data = json.loads(raw)
+                lang = (
+                    session_data.get("course_specification", {})
+                    .get("primary_language", "")
+                    .strip()
+                )
+                if lang:
+                    primary_language = lang
+                    course_context = (
+                        session_data.get("course_specification", {})
+                        .get("course_context", course_context)
+                    )
+            except (json.JSONDecodeError, KeyError, OSError):
+                pass
+
+        print("📋  Resume mode — skipping Intake Specialist.\n")
     else:
         (
             course_context,

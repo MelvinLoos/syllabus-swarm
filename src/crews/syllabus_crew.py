@@ -17,6 +17,7 @@ output as grounding context for designing relevant, scaffolded exercises.
 
 from __future__ import annotations
 
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -170,6 +171,91 @@ def _find_syllabus_in_dir(resume_dir: Path) -> Path:
     return md_files[0]
 
 
+def _build_top_level_lab_readme(
+    course_name: str,
+    primary_language: str,
+    labs_base_path: Path,
+) -> str:
+    """Build a top-level README.md index for all generated labs.
+
+    Scans the lab directory tree and produces a Markdown index with
+    a numbered list of every lab, its tier, and a one-line description.
+    """
+    lines: list[str] = [
+        f"# {course_name} — Coding Labs",
+        "",
+        f"**Primary Language:** {primary_language}",
+        "",
+        "## Overview",
+        "",
+        "This directory contains hands-on coding labs organised into three "
+        "progressive tiers. Each lab includes a **starter/** scaffold with "
+        "TODO markers and a **solution/** reference implementation.",
+        "",
+        "## Lab Index",
+        "",
+    ]
+
+    tier_labels = {
+        "tier1_foundations": "Tier 1 — Foundations",
+        "tier2_application": "Tier 2 — Application",
+        "tier3_architecture": "Tier 3 — Architecture",
+    }
+
+    lab_num = 0
+    for tier_dir_name in ["tier1_foundations", "tier2_application", "tier3_architecture"]:
+        tier_path = labs_base_path / tier_dir_name
+        if not tier_path.exists():
+            continue
+
+        label = tier_labels.get(tier_dir_name, tier_dir_name)
+        lines.append(f"### {label}")
+        lines.append("")
+
+        # Look for lab files in the solution directory.
+        solution_dir = tier_path / "solution"
+        if solution_dir.exists():
+            for f in sorted(solution_dir.iterdir()):
+                if f.name.startswith(".") or f.name == "README.md":
+                    continue
+                if f.is_file():
+                    lab_num += 1
+                    # Derive a readable lab name from the filename.
+                    lab_name = f.stem.replace("_", " ").replace("-", " ").title()
+                    lines.append(
+                        f"{lab_num}. **{lab_name}** — "
+                        f"`{tier_dir_name}/starter/{f.name}` / "
+                        f"`{tier_dir_name}/solution/{f.name}`"
+                    )
+        lines.append("")
+
+    if lab_num == 0:
+        lines.append(
+            "*Labs are still being generated. Check back after the pipeline "
+            "completes.*"
+        )
+
+    lines.extend([
+        "## Getting Started",
+        "",
+        "1. Navigate to any lab's `starter/` directory.",
+        "2. Read the `README.md` for learning objectives and instructions.",
+        "3. Complete the TODO markers in the starter files.",
+        "4. Compare your solution with the `solution/` directory.",
+        "",
+        "## Humanics Literacies",
+        "",
+        "- **[T] Technological Literacy** — Every lab requires writing, "
+        "debugging, and running real code.",
+        "- **[D] Data Literacy** — Labs include data processing, analysis, "
+        "and evidence-based decision making.",
+        "- **[H] Human Literacy** — Every README includes ethics, "
+        "accessibility, and collaboration reflection prompts.",
+    ])
+
+    return "\n".join(lines) + "\n"
+
+
 def run_syllabus_crew(
     course_context: str,
     *,
@@ -275,9 +361,47 @@ def run_syllabus_crew(
         run_dir = OUTPUT_ROOT / _active_run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
+        # ── Copy existing content from the resume directory ────────────
+        # Copy the syllabus into the new run directory so the output is
+        # self-contained.
+        new_syllabus_dir = run_dir / "syllabus"
+        new_syllabus_dir.mkdir(parents=True, exist_ok=True)
+        new_syllabus_path = new_syllabus_dir / syllabus_path.name
+        if not new_syllabus_path.exists():
+            shutil.copy2(syllabus_path, new_syllabus_path)
+            if verbose:
+                print(f"  📄  Copied syllabus to: {new_syllabus_path}")
+        # Update syllabus_path to point at the copy in the new run dir.
+        syllabus_path = new_syllabus_path
+
+        # Copy any existing lab files from the resume directory so
+        # previously-completed tiers are preserved in the new run.
+        resume_labs_dir = resume_path / "labs"
+        if resume_labs_dir.exists():
+            labs_dir = run_dir / "labs"
+            labs_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(
+                resume_labs_dir,
+                labs_dir,
+                dirs_exist_ok=True,
+            )
+            if verbose:
+                print(f"  📁  Copied existing labs from: {resume_labs_dir}")
+
+        # Copy root-level metadata files (intake_session.json,
+        # course_graph.json, manifest.json, etc.) so the new run
+        # directory is fully self-contained.
+        for item in resume_path.iterdir():
+            if item.is_file():
+                dest = run_dir / item.name
+                if not dest.exists():
+                    shutil.copy2(item, dest)
+                    if verbose:
+                        print(f"  📋  Copied {item.name} to: {dest}")
+
         labs_dir = run_dir / "labs"
         labs_dir.mkdir(parents=True, exist_ok=True)
-        labs_base_path = labs_dir / safe_name
+        labs_base_path = labs_dir
 
     else:
         # ── Fresh run: create new run directory ────────────────────────
@@ -297,7 +421,7 @@ def run_syllabus_crew(
 
         labs_dir = run_dir / "labs"
         labs_dir.mkdir(parents=True, exist_ok=True)
-        labs_base_path = labs_dir / safe_name
+        labs_base_path = labs_dir
 
         # ── 1. Curriculum Architect ────────────────────────────────────
         if architect_agent is None:
@@ -363,38 +487,68 @@ def run_syllabus_crew(
             labs_error = str(exc)
 
         if lab_dev is not None and syllabus_raw:
-            lab_task = create_lab_generation_task(
-                agent=lab_dev,
-                course_name=course_name,
-                syllabus_context=syllabus_raw,
-                language=primary_language,
-                run_id=_active_run_id,
-                verbose=verbose,
-            )
+            # Run three separate per-tier tasks to keep prompt sizes
+            # manageable for the LLM.  Each task focuses on a single
+            # tier and writes its files via the output_export_tool.
+            tiers = [
+                "tier1_foundations",
+                "tier2_application",
+                "tier3_architecture",
+            ]
+            all_tier_ok = True
 
-            try:
-                lab_crew = Crew(
-                    agents=[lab_dev],
-                    tasks=[lab_task],
-                    process=Process.sequential,
+            for tier_name in tiers:
+                tier_task = create_lab_generation_task(
+                    agent=lab_dev,
+                    course_name=course_name,
+                    syllabus_context=syllabus_raw,
+                    language=primary_language,
+                    run_id=_active_run_id,
+                    tier=tier_name,
                     verbose=verbose,
                 )
-                lab_result = lab_crew.kickoff()
-                lab_raw = (
-                    lab_result.raw
-                    if hasattr(lab_result, "raw")
-                    else str(lab_result)
-                ).strip()
 
-                if not lab_raw:
-                    labs_error = "Lab Developer produced no output."
-                else:
-                    lab_readme = labs_base_path / "README.md"
-                    write_file(lab_readme, lab_raw, force=True)
-                    labs_ok = True
+                try:
+                    tier_crew = Crew(
+                        agents=[lab_dev],
+                        tasks=[tier_task],
+                        process=Process.sequential,
+                        verbose=verbose,
+                    )
+                    tier_result = tier_crew.kickoff()
+                    tier_raw = (
+                        tier_result.raw
+                        if hasattr(tier_result, "raw")
+                        else str(tier_result)
+                    ).strip()
 
-            except Exception as exc:
-                labs_error = str(exc)
+                    if not tier_raw:
+                        print(f"  ⚠️  {tier_name}: produced no output.")
+                        all_tier_ok = False
+                    else:
+                        # Write the tier-level README (summary).
+                        tier_readme = labs_base_path / tier_name / "README.md"
+                        write_file(tier_readme, tier_raw, force=True)
+                        print(f"  ✅  {tier_name}: generated successfully.")
+
+                except Exception as exc:
+                    print(f"  ❌  {tier_name}: {exc}")
+                    all_tier_ok = False
+
+            if all_tier_ok:
+                # Write a top-level index README.
+                top_readme = _build_top_level_lab_readme(
+                    course_name, primary_language, labs_base_path
+                )
+                write_file(
+                    labs_base_path / "README.md", top_readme, force=True
+                )
+                labs_ok = True
+            else:
+                labs_error = (
+                    "One or more tier lab tasks failed.  "
+                    "Check the per-tier output above."
+                )
         elif not syllabus_raw:
             labs_error = (
                 "Skipped — Curriculum Architect produced no syllabus "
