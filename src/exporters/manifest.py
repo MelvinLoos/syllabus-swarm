@@ -31,13 +31,16 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from src.exporters.file_writer import (
     OUTPUT_PATHS,
     write_file,
     _sanitize_filename,
 )
+
+if TYPE_CHECKING:
+    from src.models import CourseGraph
 
 # ---------------------------------------------------------------------------
 # Project-root resolution
@@ -243,8 +246,12 @@ def update_output_manifest(
     syllabus_path: Optional[Path] = None,
     labs_base_path: Optional[Path] = None,
     rubrics_path: Optional[Path] = None,
+    course_graph: Optional[CourseGraph] = None,
 ) -> Path:
     """Scan the ``output/`` directory and write ``output/README.md``.
+
+    If *course_graph* is provided, ``output/course_graph.json`` is also
+    written alongside the README manifest.
 
     Always recomputes from disk; writes with ``force=True``.
     """
@@ -369,6 +376,14 @@ def update_output_manifest(
 
     manifest_content = "".join(lines)
     manifest_path = output_dir / "README.md"
+
+    # ── Optionally write course_graph.json alongside README ───────────
+    if course_graph is not None:
+        graph_path = output_dir / "course_graph.json"
+        write_file(
+            graph_path, course_graph.model_dump_json(indent=2), force=True
+        )
+
     return write_file(manifest_path, manifest_content, force=True)
 
 

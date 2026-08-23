@@ -144,7 +144,8 @@ class OutputExportTool(BaseTool):
     description: str = (
         "Writes syllabus, labs, and manifest files to the output/ directory "
         "tree.  Supports commands: write-syllabus, write-labs, "
-        "generate-manifest, write-file, write-directory-tree.  "
+        "generate-manifest, export-course-graph, "
+        "write-file, write-directory-tree.  "
         "Accepts a JSON object with a 'command' key and command-specific "
         "parameters.  Example: "
         '{"command": "write-syllabus", "course_name": "ML 101", '
@@ -208,6 +209,8 @@ class OutputExportTool(BaseTool):
                 return self._handle_write_labs(parsed)
             elif command == "generate-manifest":
                 return self._handle_generate_manifest(parsed)
+            elif command == "export-course-graph":
+                return self._handle_export_course_graph(parsed)
             elif command == "write-file":
                 return self._handle_write_file(parsed)
             elif command == "write-directory-tree":
@@ -216,7 +219,7 @@ class OutputExportTool(BaseTool):
                 return _err(
                     f"Unknown command: '{command}'.  Supported commands: "
                     "write-syllabus, write-labs, generate-manifest, "
-                    "write-file, write-directory-tree."
+                    "export-course-graph, write-file, write-directory-tree."
                 )
         except FileWriteError as exc:
             return _err(str(exc))
@@ -274,6 +277,80 @@ class OutputExportTool(BaseTool):
         course_name = str(params.get("course_name", ""))
         path = update_output_manifest(course_name=course_name)
         return _ok("Manifest regenerated.", path)
+
+    def _handle_export_course_graph(self, params: Dict[str, Any]) -> str:
+        """Export a machine-readable course graph as JSON.
+
+        Required kwargs: ``course_name``, ``course_slug``,
+        ``specification`` (dict with course_context and primary_language).
+
+        Optional kwargs: ``learning_objectives``, ``key_concepts``,
+        ``prerequisites``, ``modules``, ``run_id``.
+        """
+        from src.main import CourseSpecification
+        from src.models import CourseGraph, ModuleSummary
+
+        course_name = str(params.get("course_name", ""))
+        if not course_name:
+            return _err("Missing required parameter: 'course_name'.")
+
+        course_slug = str(params.get("course_slug", ""))
+        if not course_slug:
+            return _err("Missing required parameter: 'course_slug'.")
+
+        spec_dict = params.get("specification")
+        if not spec_dict or not isinstance(spec_dict, dict):
+            return _err(
+                "Missing or invalid 'specification' parameter.  "
+                "Expected a dict with 'course_context' and 'primary_language'."
+            )
+
+        try:
+            specification = CourseSpecification.model_validate(spec_dict)
+        except Exception as exc:
+            return _err(f"Invalid specification: {exc}")
+
+        # ── Build ModuleSummary list ────────────────────────────────
+        modules_raw = params.get("modules")
+        modules: List[ModuleSummary] = []
+        if modules_raw and isinstance(modules_raw, list):
+            for m in modules_raw:
+                if isinstance(m, dict):
+                    try:
+                        modules.append(ModuleSummary.model_validate(m))
+                    except Exception as exc:
+                        return _err(f"Invalid module entry: {exc}")
+                elif isinstance(m, ModuleSummary):
+                    modules.append(m)
+
+        # ── Build CourseGraph ───────────────────────────────────────
+        graph = CourseGraph(
+            specification=specification,
+            course_slug=course_slug,
+            learning_objectives=list(
+                params.get("learning_objectives", []) or []
+            ),
+            key_concepts=list(params.get("key_concepts", []) or []),
+            prerequisites=list(params.get("prerequisites", []) or []),
+            modules=modules,
+        )
+
+        # ── Write JSON ──────────────────────────────────────────────
+        run_id = str(params.get("run_id", "") or "")
+        if run_id:
+            output_path = (
+                _PROJECT_ROOT / "output" / run_id / "course_graph.json"
+            )
+        else:
+            # Fall back to top-level output dir
+            output_path = _PROJECT_ROOT / "output" / "course_graph.json"
+
+        json_content = graph.model_dump_json(indent=2)
+        path = write_file(output_path, json_content, force=self.force)
+
+        return _ok(
+            f"Course graph exported for '{course_name}'.", path
+        )
 
     def _handle_write_file(self, params: Dict[str, Any]) -> str:
         """Low-level: write arbitrary content to a single file."""
@@ -340,6 +417,9 @@ def build_cli_parser() -> argparse.ArgumentParser:
             "  %(prog)s write-labs --course \"ML 101\" "
             '--tier tier1_foundations --files \'{"lab1.py": "..."}\'\n'
             "  %(prog)s generate-manifest --course \"ML 101\"\n"
+            "  %(prog)s export-course-graph --course \"ML 101\" "
+            "--slug ml-101 --spec '{\"course_context\":\"...\","
+            "\"primary_language\":\"Python\"}'\n"
             "  %(prog)s write-file --path output/test.md "
             "--content \"# Hello\"\n"
             "  %(prog)s write-directory-tree --base-path output/labs "
@@ -441,6 +521,69 @@ def build_cli_parser() -> argparse.ArgumentParser:
         default="",
         dest="course_name",
         help="Optional course name included in the manifest header.",
+    )
+
+    # ── export-course-graph ─────────────────────────────────────────
+    ecg = sub.add_parser(
+        "export-course-graph",
+        help="Export a machine-readable course graph as JSON.",
+        description=(
+            "Construct a ``CourseGraph`` model from the provided data "
+            "and write it as ``output/<run_id>/course_graph.json``."
+        ),
+    )
+    ecg.add_argument(
+        "--course", "-c",
+        required=True,
+        dest="course_name",
+        help="Human-readable course title.",
+    )
+    ecg.add_argument(
+        "--slug",
+        required=True,
+        dest="course_slug",
+        help="URL- / filesystem-safe identifier for the course.",
+    )
+    ecg.add_argument(
+        "--spec",
+        required=True,
+        dest="specification",
+        help=(
+            "JSON object with 'course_context' and 'primary_language' "
+            "fields (i.e. a CourseSpecification)."
+        ),
+    )
+    ecg.add_argument(
+        "--objectives",
+        default="[]",
+        dest="learning_objectives",
+        help="JSON array of learning objective strings.",
+    )
+    ecg.add_argument(
+        "--concepts",
+        default="[]",
+        dest="key_concepts",
+        help="JSON array of key concept strings.",
+    )
+    ecg.add_argument(
+        "--prereqs",
+        default="[]",
+        dest="prerequisites",
+        help="JSON array of prerequisite strings.",
+    )
+    ecg.add_argument(
+        "--modules",
+        default="[]",
+        help=(
+            "JSON array of module objects, each with 'title', "
+            "'duration_weeks', and 'topics' fields."
+        ),
+    )
+    ecg.add_argument(
+        "--run-id",
+        default="",
+        dest="run_id",
+        help="Optional run ID directory (e.g. '2026-08-23_120000_course').",
     )
 
     # ── write-file (low-level) ──────────────────────────────────────
@@ -578,6 +721,25 @@ def main(argv: Optional[List[str]] = None) -> None:
     elif command == "generate-manifest":
         result_str = tool._handle_generate_manifest(
             {"course_name": args.course_name}
+        )
+
+    elif command == "export-course-graph":
+        spec = json.loads(args.specification)
+        objectives = json.loads(args.learning_objectives)
+        concepts = json.loads(args.key_concepts)
+        prereqs = json.loads(args.prerequisites)
+        modules_list = json.loads(args.modules)
+        result_str = tool._handle_export_course_graph(
+            {
+                "course_name": args.course_name,
+                "course_slug": args.course_slug,
+                "specification": spec,
+                "learning_objectives": objectives,
+                "key_concepts": concepts,
+                "prerequisites": prereqs,
+                "modules": modules_list,
+                "run_id": args.run_id,
+            }
         )
 
     elif command == "write-file":
