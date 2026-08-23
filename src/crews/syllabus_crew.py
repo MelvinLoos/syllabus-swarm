@@ -451,6 +451,7 @@ def run_syllabus_crew(
             agent=architect,
             course_name=course_name,
             course_context=course_context,
+            run_id=_active_run_id,
         )
 
         try:
