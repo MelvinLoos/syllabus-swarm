@@ -1,0 +1,58 @@
+# =============================================================================
+# scripting2_profile.yaml — Cohort Profile: TypeScript, Node.js & MongoDB
+# =============================================================================
+
+profile:
+  name: "SCRIPTING 2 — TS, Node.js & MongoDB (BOL)"
+  description: >
+    A 25-week focused module covering Object-Oriented JavaScript, TypeScript, 
+    Node.js, and MongoDB. Designed for active in-class participation. 
+    Introduces students to continuous integration (CI) via GitHub Actions 
+    for automated linting.
+
+# --- Cohort Demographics -----------------------------------------------------
+year_level: 2
+student_pathway: "BOL"
+bpv_readiness: "pre-bpv"
+
+# --- Tech Stack Baseline -----------------------------------------------------
+tech_stack:
+  primary_language: "TypeScript / JavaScript (ES6+)"
+  framework: "Node.js"
+  frontend: "None (Backend focus)"
+  database: "MongoDB (Mongoose/Native Driver)"
+  version_control: "Git (GitHub Classroom)"
+  editor: "VS Code"
+  testing:
+    framework: "Jest (ts-jest)"
+    coverage_target: "70%"
+  ci_cd: "GitHub Actions (Linting only with ESLint)"
+  containerisation: "None (Native Node.js runtime & cloud DB)"
+  deployment: "None (Local development focus)"
+
+# --- Kerntaken Emphasis ------------------------------------------------------
+# Which of the four SBB kerntaken this cohort emphasises.
+# Values: "heavy", "moderate", "light", "none"
+kerntaken_emphasis:
+  P1-K1: "light"      # Planning
+  P2-K1: "moderate"   # Designing (Data modeling for MongoDB / NoSQL)
+  P3-K1: "heavy"      # Building (OOP, TS types, APIs)
+  P4-K1: "moderate"   # Testing
+
+# --- Static Constraints (injected into CourseSpecification) -------------------
+grading_scale: "OVG"
+hardware_constraints: "BYOD laptop. Requires local Node.js installation. MongoDB Atlas used for database to avoid local DB setup issues."
+
+# --- Course Schedule ---------------------------------------------------------
+schedule:
+  semester: 3
+  weeks: 25
+  contact_hours_per_week: 2
+  self_study_hours_per_week: 0  # 0 hours required if actively participating in class
+
+# --- Assessment --------------------------------------------------------------
+assessment:
+  practical_exams: 1
+  portfolio_items: 2
+  proeve_preparation: false
+  code_reviews_per_semester: 2
