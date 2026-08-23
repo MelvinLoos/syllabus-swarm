@@ -34,28 +34,6 @@ python test_openrouter.py
 
 ---
 
-## Architecture
-
-syllabus-swarm is built on three specialized AI agents, each assigned a model optimized for its specific role:
-
-| Agent | Role | Default Model | Rationale |
-|---|---|---|---|
-| **Curriculum Architect** | Designs syllabi using the Humanics framework (data literacy, technological literacy, human literacy) + experiential learning | `deepseek/deepseek-v4-pro` | State-of-the-art multi-step reasoning for crafting logically coherent, pedagogically sound syllabi that span weeks of content across three integrated literacies. |
-| **Lab & Project Developer** | Generates tiered hands-on coding exercises with starter code and fully-commented solution keys | `qwen/qwen3-coder` | Purpose-built for programming tasks — produces cleaner starter code, more idiomatic solutions, and fewer hallucinated API calls than general-purpose models. |
-| **Output Exporter** | Compiles and packages all materials into clean directory structures and a consolidated manifest | `deepseek/deepseek-v4-flash-latest` | Low-latency, low-cost completions ideal for manifest generation, file assembly, and Markdown packaging — reliability without burning reasoning-token budgets. |
-
-All models are served via **OpenRouter** (`https://openrouter.ai/api/v1`).
-
-### Output Structure
-
-| Agent | Output |
-|---|---|
-| Curriculum Architect | `output/syllabus/` |
-| Lab & Project Developer | `output/labs/` |
-| Output Exporter | `output/README.md` (manifest) |
-
----
-
 ## Model Configuration
 
 Every agent obtains its LLM through a shared factory (`src/llm_factory.py`) that resolves model, temperature, top_p, and max_tokens through a **4-tier fallback chain**.
