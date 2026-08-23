@@ -1,0 +1,73 @@
+# =============================================================================
+# program1_profile.yaml — Example Cohort Profile: PHP/Laravel — BOL Pathway
+# =============================================================================
+#
+# This cohort profile represents a typical Dutch MBO4 Software Developer
+# programme delivered via the BOL (school-based) pathway with a PHP/Laravel
+# tech stack.  Load this profile with:
+#
+#     python src/main.py "Laravel Web Development" --profile config/cohorts/program1_profile.yaml
+#
+# When a profile is loaded, the Intake Specialist will skip questions for
+# any field that is pre-populated (grading_scale, student_pathway,
+# year_level, hardware_constraints) and only ask about remaining gaps
+# (e.g., kerntaken emphasis, specific tooling preferences).
+#
+# =============================================================================
+
+profile:
+  name: "PHP/Laravel — BOL Pathway (Year 2)"
+  description: >
+    A second-year MBO4 Software Developer cohort following the BOL
+    (school-based) pathway.  Students have completed a foundation year
+    with HTML, CSS, basic PHP, and SQL.  This year focuses on the Laravel
+    ecosystem, database design, testing, and BPV preparation.
+
+# --- Cohort Demographics -----------------------------------------------------
+year_level: 2
+student_pathway: "BOL"
+bpv_readiness: "bpv-ready"
+
+# --- Tech Stack Baseline -----------------------------------------------------
+tech_stack:
+  primary_language: "PHP"
+  framework: "Laravel 11"
+  frontend: "Blade templates + Tailwind CSS + Alpine.js"
+  database: "MySQL / MariaDB"
+  version_control: "Git (GitHub Classroom)"
+  editor: "VS Code"
+  testing:
+    framework: "Pest"
+    coverage_target: "80%"
+  ci_cd: "GitHub Actions"
+  containerisation: "Docker (Laravel Sail)"
+  deployment: "Render / Railway (free tier)"
+
+# --- Kerntaken Emphasis ------------------------------------------------------
+# Which of the four SBB kerntaken this cohort emphasises.
+# Values: "heavy", "moderate", "light", "none"
+kerntaken_emphasis:
+  P1-K1: "moderate"   # Planning
+  P2-K1: "heavy"      # Designing
+  P3-K1: "heavy"      # Building
+  P4-K1: "heavy"      # Testing  (emphasis because of BPV readiness)
+
+# --- Static Constraints (injected into CourseSpecification) -------------------
+# These values will be injected directly into the CourseSpecification model
+# so the Intake Specialist skips them during the interview.
+grading_scale: "OVG"
+hardware_constraints: "BYOD laptop (Windows/macOS/Linux), 8GB+ RAM, Chrome-based browsers preferred. Docker via Laravel Sail on capable machines; GitHub Codespaces as fallback."
+
+# --- Course Schedule ---------------------------------------------------------
+schedule:
+  semester: 2
+  weeks: 20
+  contact_hours_per_week: 16
+  self_study_hours_per_week: 12
+
+# --- Assessment --------------------------------------------------------------
+assessment:
+  practical_exams: 2
+  portfolio_items: 4
+  proeve_preparation: true
+  code_reviews_per_semester: 3

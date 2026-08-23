@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Ensure the project root is on sys.path so that `from src.…` imports work
@@ -44,6 +45,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+import yaml
 from dotenv import load_dotenv
 
 # Load environment variables *before* any internal imports that read them.
@@ -67,6 +69,12 @@ class CourseSpecification(BaseModel):
     This model ensures the LLM returns both the rich pedagogical context
     AND the exact programming language, eliminating the need for brittle
     regex-based language detection downstream.
+
+    The four Optional fields — ``grading_scale``, ``student_pathway``,
+    ``year_level``, and ``hardware_constraints`` — can be pre-populated
+    from a cohort profile (``--profile <path>``) to skip those intake
+    questions.  When a field is ``None`` the Intake Specialist will still
+    prompt for it.
     """
 
     course_context: str = Field(
@@ -76,6 +84,31 @@ class CourseSpecification(BaseModel):
     primary_language: str = Field(
         description="The exact programming language to be used for labs "
         "(e.g., 'JavaScript', 'Python', 'TypeScript', 'Java', 'Go', 'Rust')."
+    )
+    grading_scale: Optional[str] = Field(
+        default=None,
+        description="The grading scale to use (e.g., 'OVG' for Dutch MBO "
+        "Onvoldoende/Voldoende/Goed, '1-10', 'A-F').  When pre-populated "
+        "from a profile, the Intake Specialist skips this question.",
+    )
+    student_pathway: Optional[str] = Field(
+        default=None,
+        description="The student pathway: 'BOL' (school-based) or 'BBL' "
+        "(work-based).  When pre-populated from a profile, the Intake "
+        "Specialist skips this question.",
+    )
+    year_level: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=3,
+        description="The student year level (1, 2, or 3).  When pre-populated "
+        "from a profile, the Intake Specialist skips this question.",
+    )
+    hardware_constraints: Optional[str] = Field(
+        default=None,
+        description="Description of hardware/device constraints (e.g., BYOD, "
+        "Chromebooks, thin clients).  When pre-populated from a profile, "
+        "the Intake Specialist skips this question.",
     )
 
 # ---------------------------------------------------------------------------
@@ -125,13 +158,127 @@ def _get_resume_dir() -> str | None:
 
 def _clean_cli_flags() -> None:
     """Remove known CLI flags from sys.argv so they don't pollute the course name."""
-    for flag in ("--skip-labs", "--resume-from"):
+    for flag in ("--skip-labs", "--resume-from", "--profile"):
         while flag in sys.argv:
             idx = sys.argv.index(flag)
             # Remove the flag and its value (if it has one)
-            if flag == "--resume-from" and idx + 1 < len(sys.argv):
+            if flag in ("--resume-from", "--profile") and idx + 1 < len(sys.argv):
                 sys.argv.pop(idx)  # value
             sys.argv.pop(idx)  # flag
+
+
+def _get_profile_path() -> str | None:
+    """Extract the --profile value from CLI arguments, or None."""
+    try:
+        idx = sys.argv.index("--profile")
+    except ValueError:
+        return None
+    if idx + 1 >= len(sys.argv):
+        print("❌ --profile requires a path to a YAML file.", file=sys.stderr)
+        sys.exit(1)
+    return sys.argv[idx + 1]
+
+
+def _load_profile(path: str) -> dict:
+    """Load and validate a YAML cohort profile file.
+
+    Parameters
+    ----------
+    path : str
+        Path to a ``.yaml`` / ``.yml`` cohort profile file.
+
+    Returns
+    -------
+    dict
+        The parsed YAML contents as a dictionary.
+
+    Raises
+    ------
+    SystemExit
+        If the file does not exist, cannot be read, or is not valid YAML.
+    """
+    profile_path = Path(path)
+    if not profile_path.is_absolute():
+        # Resolve relative paths against the project root
+        profile_path = _PROJECT_ROOT / profile_path
+
+    if not profile_path.exists():
+        print(
+            f"❌ Profile not found: {profile_path}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if not profile_path.suffix.lower() in (".yaml", ".yml"):
+        print(
+            f"❌ Profile must be a .yaml or .yml file, got: {profile_path.suffix}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        with open(profile_path, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+    except yaml.YAMLError as exc:
+        print(f"❌ Invalid YAML in profile: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as exc:
+        print(f"❌ Cannot read profile: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not isinstance(data, dict):
+        print("❌ Profile YAML must be a mapping (dict) at the root.", file=sys.stderr)
+        sys.exit(1)
+
+    return data
+
+
+def _inject_profile(spec: CourseSpecification, profile: dict) -> CourseSpecification:
+    """Inject pre-populated profile values into the CourseSpecification model.
+
+    Only sets a field when the profile explicitly provides a non-None value
+    for it AND the model field is currently None.  This means the Intake
+    Specialist can still set missing fields via the LLM interview.
+
+    Parameters
+    ----------
+    spec : CourseSpecification
+        The (typically empty or partially-filled) course specification.
+    profile : dict
+        Parsed YAML profile dictionary.
+
+    Returns
+    -------
+    CourseSpecification
+        The specification with profile values injected (in-place).
+    """
+    # Top-level profile fields that map directly to CourseSpecification
+    for key in ("grading_scale", "student_pathway", "year_level", "hardware_constraints"):
+        if key in profile and profile[key] is not None:
+            current = getattr(spec, key)
+            if current is None:
+                setattr(spec, key, profile[key])
+
+    # Also inject primary_language from tech_stack if present
+    if (
+        spec.primary_language == ""
+        or spec.primary_language == "Python"  # default fallback when profile exists
+    ):
+        tech = profile.get("tech_stack", {})
+        pl = tech.get("primary_language")
+        if pl:
+            spec.primary_language = pl
+
+    return spec
+
+
+def _get_pre_populated_fields(spec: CourseSpecification) -> list[str]:
+    """Return a list of field names that are pre-populated (non-None)."""
+    fields: list[str] = []
+    for key in ("grading_scale", "student_pathway", "year_level", "hardware_constraints"):
+        if getattr(spec, key) is not None:
+            fields.append(key)
+    return fields
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +286,12 @@ def _clean_cli_flags() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _run_intake(course_name: str, *, verbose: bool = False) -> tuple[str, str]:
+def _run_intake(
+    course_name: str,
+    *,
+    verbose: bool = False,
+    pre_populated: Optional[CourseSpecification] = None,
+) -> tuple[str, str]:
     """Run the Intake Specialist to gather rich course context.
 
     Steps:
@@ -164,6 +316,35 @@ def _run_intake(course_name: str, *, verbose: bool = False) -> tuple[str, str]:
     """
     intake_agent = get_intake_specialist(verbose=verbose)
 
+    # ── Build profile context for the question prompt ──────────────────
+    skip_section = ""
+    if pre_populated is not None:
+        filled = _get_pre_populated_fields(pre_populated)
+        if filled:
+            skip_notes: list[str] = []
+            labels = {
+                "grading_scale": "grading scale",
+                "student_pathway": "student pathway (BOL/BBL)",
+                "year_level": "year level",
+                "hardware_constraints": "hardware constraints",
+            }
+            for field in filled:
+                label = labels.get(field, field)
+                val = getattr(pre_populated, field)
+                skip_notes.append(f"     • {label}: **{val}** (pre-populated — skip)")
+            if skip_notes:
+                skip_section = (
+                    "\n**⚠️  The following fields are ALREADY KNOWN from the "
+                    "cohort profile — DO NOT ask about them:**\n"
+                    + "\n".join(skip_notes)
+                )
+        # Also note tech stack if primary_language is pre-populated
+        if pre_populated.primary_language and pre_populated.primary_language not in ("", "Python"):
+            skip_section += (
+                f"\n     • primary language: **{pre_populated.primary_language}** "
+                f"(pre-populated — skip)\n"
+            )
+
     # ── Step 1: Ask clarifying questions ────────────────────────────────
     question_task = Task(
         description=(
@@ -177,6 +358,7 @@ def _run_intake(course_name: str, *, verbose: bool = False) -> tuple[str, str]:
             f"(P2-K1), building (P3-K1), and/or testing (P4-K1) software\n"
             f"3. The student profile: BOL or BBL pathway, year level "
             f"(1, 2, or 3), and BPV (internship) readiness\n\n"
+            f"{skip_section}\n"
             f"Output ONLY the questions — no preamble, no commentary, "
             f"no markdown formatting.  Number them 1, 2, 3.  Keep each "
             f"question to one or two sentences."
@@ -211,6 +393,12 @@ def _run_intake(course_name: str, *, verbose: bool = False) -> tuple[str, str]:
         return f"Course Name: {course_name}", "Python"
 
     # ── Step 2: Display questions and capture answers ────────────────────
+    if pre_populated is not None and _get_pre_populated_fields(pre_populated):
+        print("📋  Pre-populated fields from profile:")
+        for field in _get_pre_populated_fields(pre_populated):
+            print(f"    ✓ {field}: {getattr(pre_populated, field)}")
+        print()
+
     print(f"{'─' * 60}")
     print(questions)
     print(f"{'─' * 60}")
@@ -238,13 +426,29 @@ def _run_intake(course_name: str, *, verbose: bool = False) -> tuple[str, str]:
         return f"Course Name: {course_name}", "Python"
 
     # ── Step 3: Synthesise course context ────────────────────────────────
+    # Include pre-populated fields in the synthesis prompt so the LLM
+    # incorporates them into the course_context.
+    pre_pop_bonus = ""
+    if pre_populated is not None:
+        filled = _get_pre_populated_fields(pre_populated)
+        if filled:
+            parts: list[str] = []
+            for field in filled:
+                parts.append(f"   - {field}: {getattr(pre_populated, field)}")
+            pre_pop_bonus = (
+                "\n\n**Pre-populated constraints from cohort profile "
+                "(already known — incorporate into course_context):**\n"
+                + "\n".join(parts)
+            )
+
     synthesis_task = Task(
         description=(
             f"You interviewed the user about their course and received "
             f"the following information.\n\n"
             f"**Course Name:** {course_name}\n\n"
             f"**Your Questions:**\n{questions}\n\n"
-            f"**User's Answers:**\n{user_answers}\n\n"
+            f"**User's Answers:**\n{user_answers}"
+            f"{pre_pop_bonus}\n\n"
             f"Your task: Synthesise the course name, your questions, and "
             f"the user's answers into a structured ``CourseSpecification`` "
             f"object with two fields:\n\n"
@@ -461,6 +665,7 @@ def main() -> None:
     # --- 1. Gather input -------------------------------------------------
     skip_labs = _should_skip_labs()
     resume_dir = _get_resume_dir()
+    profile_path = _get_profile_path()
 
     # Validate: --skip-labs + --resume-from is a no-op
     if skip_labs and resume_dir:
@@ -470,6 +675,24 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    # Load profile if provided (before _clean_cli_flags removes --profile)
+    profile_data: Optional[dict] = None
+    pre_populated: Optional[CourseSpecification] = None
+    if profile_path:
+        profile_data = _load_profile(profile_path)
+        profile_name = profile_data.get("profile", {}).get("name", profile_path)
+        pre_populated = CourseSpecification(
+            course_context="",
+            primary_language="",
+        )
+        pre_populated = _inject_profile(pre_populated, profile_data)
+        print(f"📋  Loaded cohort profile: {profile_name}")
+        filled = _get_pre_populated_fields(pre_populated)
+        if filled:
+            print(f"    Pre-populated: {', '.join(filled)}")
+        if pre_populated.primary_language and pre_populated.primary_language not in ("", "Python"):
+            print(f"    Primary language: {pre_populated.primary_language}")
 
     _clean_cli_flags()
 
@@ -482,6 +705,8 @@ def main() -> None:
     print(f"  Model:      Per-agent via OpenRouter (see .env.example)")
     if resume_dir:
         print(f"  Resume:     {resume_dir}")
+    if profile_path:
+        print(f"  Profile:    {profile_path}")
     print(f"  Labs:       {'Skip' if skip_labs else 'Generate'}")
     print(f"{'=' * 60}\n")
 
@@ -492,7 +717,11 @@ def main() -> None:
         primary_language = "Python"
         print("📋  Resume mode — skipping Intake Specialist.\n")
     else:
-        course_context, primary_language = _run_intake(course_name, verbose=True)
+        course_context, primary_language = _run_intake(
+            course_name,
+            verbose=True,
+            pre_populated=pre_populated,
+        )
 
     # --- 3. Run the crew -------------------------------------------------
     try:

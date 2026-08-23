@@ -67,6 +67,10 @@ class TestCourseSpecification:
         assert data == {
             "course_context": "Test context",
             "primary_language": "Go",
+            "grading_scale": None,
+            "student_pathway": None,
+            "year_level": None,
+            "hardware_constraints": None,
         }
 
     def test_model_can_be_deserialized(self) -> None:
