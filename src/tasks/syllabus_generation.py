@@ -144,7 +144,6 @@ def create_syllabus_generation_task(
     course_description: str | None = None,
     course_duration: str | None = None,
     target_audience: str | None = None,
-    run_id: str | None = None,
     verbose: bool = False,
 ) -> Task:
     """Create a CrewAI Task that generates a Humanics-aligned syllabus.
@@ -243,26 +242,15 @@ def create_syllabus_generation_task(
         f"`# {course_name} — Course Syllabus`\n"
     )
 
-    # ---- Compute the output file path -----------------------------------
-    safe_name: str = (
-        course_name.strip()
-        .replace(" ", "_")
-        .replace("/", "-")
-        .replace(":", "-")
-        .replace("&", "and")
-        .lower()
-    )
-    if run_id:
-        output_file: str = f"output/{run_id}/syllabus/{safe_name}.md"
-    else:
-        output_file: str = f"output/syllabus/{safe_name}.md"
-
     # ---- Assemble and return the Task -----------------------------------
+    # NOTE: The syllabus file is written explicitly by the orchestrator in
+    # syllabus_crew.py using the canonical _sanitize_filename(), so there is
+    # no output_file on the Task.  Setting one causes a duplicate file when
+    # CrewAI persists the task output under a different name.
     return Task(
         description=description,
         expected_output=expected_output,
         agent=agent,
-        output_file=output_file,
         async_execution=False,
     )
 
@@ -282,7 +270,6 @@ if __name__ == "__main__":
         verbose=True,
     )
     print("✅ Syllabus Generation Task created successfully.\n")
-    print(f"   Output file:  {task.output_file}")
     print(f"   Agent role:   {agent.role.split(chr(10))[0]}")
     print(f"   Async:        {task.async_execution}")
     print(f"   Description length: {len(task.description)} chars")

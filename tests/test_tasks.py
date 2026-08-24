@@ -53,10 +53,10 @@ class TestCreateSyllabusGenerationTask:
         kwargs = self._call_factory()
         assert "# Python for Data Engineering — Course Syllabus" in kwargs["expected_output"]
 
-    def test_output_file_follows_expected_pattern(self) -> None:
-        """The output_file is output/syllabus/<safe_name>.md."""
+    def test_output_file_not_set(self) -> None:
+        """The orchestrator writes the syllabus; output_file is not on the Task."""
         kwargs = self._call_factory()
-        assert kwargs["output_file"] == "output/syllabus/python_for_data_engineering.md"
+        assert "output_file" not in kwargs
 
     def test_async_execution_is_false(self) -> None:
         """Tasks are synchronous by default."""
