@@ -28,6 +28,7 @@ import pytest
 
 from src.llm_factory import (
     CURRICULUM_ARCHITECT,
+    EDUCATION_DIRECTOR,
     LAB_DEVELOPER,
     OUTPUT_EXPORTER,
     build_llm_for_agent,
@@ -55,6 +56,7 @@ ALL_ROLES: tuple[str, ...] = (
     CURRICULUM_ARCHITECT,
     LAB_DEVELOPER,
     OUTPUT_EXPORTER,
+    EDUCATION_DIRECTOR,
 )
 
 

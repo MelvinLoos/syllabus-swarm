@@ -20,6 +20,10 @@ from src.agents.curriculum_architect import (
     create_curriculum_architect,
     get_architect,
 )
+from src.agents.education_director import (
+    create_education_director,
+    get_education_director,
+)
 from src.agents.lab_developer import (
     create_lab_developer,
     get_lab_developer,
@@ -34,6 +38,7 @@ from src.agents.theory_instructor import (
 )
 from src.llm_factory import (
     CURRICULUM_ARCHITECT,
+    EDUCATION_DIRECTOR,
     LAB_DEVELOPER,
     QA_REVIEWER,
     THEORY_INSTRUCTOR,
@@ -600,6 +605,34 @@ class TestModuleSingletons:
             a2 = get_theory_instructor()
             assert a1 is a2
 
+    def test_get_education_director_returns_agent(self, mock_llm: MagicMock) -> None:
+        """get_education_director returns a valid Agent."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            import src.agents.education_director as ed
+
+            ed._director_instance = None
+
+            agent = get_education_director()
+            assert isinstance(agent, Agent)
+            assert "Head of Education" in agent.role
+
+    def test_get_education_director_is_idempotent(self, mock_llm: MagicMock) -> None:
+        """Calling get_education_director twice returns the same instance."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            import src.agents.education_director as ed
+
+            ed._director_instance = None
+
+            a1 = get_education_director()
+            a2 = get_education_director()
+            assert a1 is a2
+
 
 # ===================================================================
 # create_theory_instructor
@@ -722,3 +755,148 @@ class TestCreateTheoryInstructor:
             agent = create_theory_instructor()
             export_tool = next(t for t in agent.tools if t.name == "output_export_tool")
             assert export_tool.force is True
+
+
+# ===================================================================
+# create_education_director
+# ===================================================================
+
+
+class TestCreateEducationDirector:
+    """Tests for the Education Director agent factory."""
+
+    def test_role_contains_education_director(self, mock_llm: MagicMock) -> None:
+        """The agent's role identifies it as the Education Director."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ) as mock_build:
+            agent = create_education_director()
+            assert "Head of Education" in agent.role
+            assert "Feasibility Auditor" in agent.role
+            mock_build.assert_called_once_with(EDUCATION_DIRECTOR)
+
+    def test_goal_contains_time_budget_math(self, mock_llm: MagicMock) -> None:
+        """The goal references time-budget calculations."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director()
+            assert "Time-Budget Math" in agent.goal
+
+    def test_goal_contains_workload_realism(self, mock_llm: MagicMock) -> None:
+        """The goal references workload realism for MBO4 students."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director()
+            assert "Workload Realism" in agent.goal
+
+    def test_goal_contains_scheduling_sanity(self, mock_llm: MagicMock) -> None:
+        """The goal references scheduling sanity checks."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director()
+            assert "Scheduling Sanity" in agent.goal
+
+    def test_goal_contains_mbo4_appropriateness(self, mock_llm: MagicMock) -> None:
+        """The goal references MBO4 appropriateness checks."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director()
+            assert "MBO4 Appropriateness" in agent.goal
+
+    def test_backstory_mentions_mbo4(self, mock_llm: MagicMock) -> None:
+        """The backstory references MBO4 vocational education."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director()
+            assert "MBO4" in agent.backstory
+
+    def test_backstory_mentions_director(self, mock_llm: MagicMock) -> None:
+        """The backstory establishes the agent as a school director."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director()
+            assert "director" in agent.backstory.lower()
+
+    def test_backstory_mentions_curriculum_architect(self, mock_llm: MagicMock) -> None:
+        """The backstory references delegating back to the Curriculum Architect."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director()
+            assert "Curriculum Architect" in agent.backstory
+
+    def test_allow_delegation_is_true(self, mock_llm: MagicMock) -> None:
+        """The Education Director MUST allow delegation to send fixes back."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director()
+            assert agent.allow_delegation is True
+
+    def test_max_iter_is_five(self, mock_llm: MagicMock) -> None:
+        """The agent has max_iter set to 5."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director()
+            assert agent.max_iter == 5
+
+    def test_max_rpm_is_twenty(self, mock_llm: MagicMock) -> None:
+        """The agent has max_rpm set to 20."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director()
+            assert agent.max_rpm == 20
+
+    def test_verbose_defaults_to_false(self, mock_llm: MagicMock) -> None:
+        """verbose is False by default."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director()
+            assert agent.verbose is False
+
+    def test_verbose_can_be_enabled(self, mock_llm: MagicMock) -> None:
+        """verbose can be set to True."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director(verbose=True)
+            assert agent.verbose is True
+
+    def test_explicit_llm_bypasses_factory(self, mock_llm: MagicMock) -> None:
+        """When an LLM is passed explicitly, the factory is not called."""
+        custom_llm = MagicMock(spec=LLM)
+        with patch("src.agents.education_director.build_llm_for_agent") as mock_build:
+            agent = create_education_director(llm=custom_llm)
+            assert agent.llm is custom_llm
+            mock_build.assert_not_called()
+
+    def test_goal_mentions_feasibility_audit_report(self, mock_llm: MagicMock) -> None:
+        """The goal specifies a Markdown Feasibility Audit Report."""
+        with patch(
+            "src.agents.education_director.build_llm_for_agent",
+            return_value=mock_llm,
+        ):
+            agent = create_education_director()
+            assert "Feasibility Audit Report" in agent.goal

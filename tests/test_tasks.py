@@ -415,3 +415,108 @@ class TestGetLangConfig:
     def test_whitespace_string_falls_back_to_python(self) -> None:
         cfg = self._call("   ")
         assert cfg["ext"] == ".py"
+
+
+# ===================================================================
+# create_syllabus_review_task
+# ===================================================================
+
+
+class TestCreateSyllabusReviewTask:
+    """Tests for the syllabus review task factory."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_task(self) -> None:
+        """Patch Task in the syllabus_review module."""
+        with patch("src.tasks.syllabus_review.Task") as self.mock_task:
+            yield
+
+    def _call_factory(self, **overrides) -> dict:
+        """Call create_syllabus_review_task and return Task kwargs."""
+        from src.tasks.syllabus_review import create_syllabus_review_task
+
+        kwargs: dict = {
+            "course_name": "Python for Data Engineering",
+            "agent": MagicMock(),
+            "syllabus_context": "# Test Syllabus\n\n## Module 1\n...",
+        }
+        kwargs.update(overrides)
+        create_syllabus_review_task(**kwargs)
+        return self.mock_task.call_args.kwargs
+
+    def test_course_name_in_description(self) -> None:
+        """The course name appears in the task description."""
+        kwargs = self._call_factory()
+        assert "Python for Data Engineering" in kwargs["description"]
+
+    def test_syllabus_context_in_description(self) -> None:
+        """The syllabus context is injected into the description."""
+        kwargs = self._call_factory(
+            course_name="Test Course",
+            syllabus_context="# Custom Syllabus\n\nContent here.",
+        )
+        assert "# Custom Syllabus" in kwargs["description"]
+        assert "Content here." in kwargs["description"]
+
+    def test_async_execution_is_false(self) -> None:
+        """Tasks are synchronous by default."""
+        kwargs = self._call_factory(course_name="Test Course")
+        assert kwargs["async_execution"] is False
+
+    def test_agent_is_passed_through(self) -> None:
+        """The agent parameter is passed through to the Task."""
+        agent = MagicMock()
+        kwargs = self._call_factory(agent=agent)
+        assert kwargs["agent"] is agent
+
+    # -- Mandate injection -----------------------------------------------
+
+    def test_time_budget_check_in_description(self) -> None:
+        """The time-budget mathematics check is present."""
+        kwargs = self._call_factory(course_name="Test Course")
+        assert "Time-Budget Mathematics" in kwargs["description"]
+        assert "TIME-BUDGET VIOLATION" in kwargs["description"]
+
+    def test_workload_realism_check_in_description(self) -> None:
+        """The workload realism check is present."""
+        kwargs = self._call_factory(course_name="Test Course")
+        assert "Workload Realism" in kwargs["description"]
+        assert "40 total hours per week" in kwargs["description"]
+
+    def test_scheduling_sanity_check_in_description(self) -> None:
+        """The scheduling sanity check is present."""
+        kwargs = self._call_factory(course_name="Test Course")
+        assert "Scheduling Sanity" in kwargs["description"]
+
+    def test_mbo4_appropriateness_check_in_description(self) -> None:
+        """The MBO4 appropriateness check is present."""
+        kwargs = self._call_factory(course_name="Test Course")
+        assert "MBO4 Appropriateness" in kwargs["description"]
+
+    def test_delegation_mandate_in_description(self) -> None:
+        """The delegation mandate is present in the description."""
+        kwargs = self._call_factory(course_name="Test Course")
+        assert "Delegation Mandate" in kwargs["description"]
+        assert "Curriculum Architect" in kwargs["description"]
+
+    def test_feasibility_audit_in_description(self) -> None:
+        """The description references a Feasibility Audit."""
+        kwargs = self._call_factory(course_name="Test Course")
+        assert "Feasibility Audit" in kwargs["description"]
+
+    # -- Expected output content -----------------------------------------
+
+    def test_expected_output_requires_time_budget_math(self) -> None:
+        """The expected_output references Time-Budget Mathematics."""
+        kwargs = self._call_factory(course_name="Test Course")
+        assert "Time-Budget Mathematics" in kwargs["expected_output"]
+
+    def test_expected_output_requires_sign_off(self) -> None:
+        """The expected_output references a Sign-Off section."""
+        kwargs = self._call_factory(course_name="Test Course")
+        assert "Sign-Off" in kwargs["expected_output"]
+
+    def test_expected_output_requires_delegation_summary(self) -> None:
+        """The expected_output references a Delegation Summary."""
+        kwargs = self._call_factory(course_name="Test Course")
+        assert "Delegation Summary" in kwargs["expected_output"]
