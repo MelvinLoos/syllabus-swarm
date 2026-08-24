@@ -741,6 +741,10 @@ def run_syllabus_crew(
                 agent=qa_reviewer,
                 course_name=course_name,
                 run_id=_active_run_id,
+                lab_developer_role=lab_dev.role if lab_dev is not None else None,
+                theory_instructor_role=(
+                    theory_instructor.role if theory_instructor is not None else None
+                ),
                 verbose=verbose,
             )
 

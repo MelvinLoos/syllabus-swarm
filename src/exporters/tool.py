@@ -56,6 +56,7 @@ from pathlib import Path
 from typing import Any
 
 from crewai.tools import BaseTool
+from pydantic import BaseModel, Field
 
 from src.exporters.file_writer import (
     OUTPUT_PATHS,
@@ -95,6 +96,57 @@ def _err(message: str) -> str:
 # ---------------------------------------------------------------------------
 # CrewAI Tool — OutputExportTool
 # ---------------------------------------------------------------------------
+
+
+class OutputExportToolArgs(BaseModel):
+    """Argument schema for :class:`OutputExportTool`.
+
+    ``command`` is required so the LLM always selects an operation.  The
+    remaining fields are optional and only relevant to specific commands —
+    they are ignored by commands that do not use them.
+    """
+
+    command: str = Field(
+        ...,
+        description=(
+            "The operation to perform. One of: write-syllabus, write-labs, "
+            "generate-manifest, export-course-graph, write-file, "
+            "write-directory-tree."
+        ),
+    )
+    course_name: str = Field(default="", description="Human-facing course name.")
+    content: str = Field(default="", description="Full file content (Markdown or source code).")
+    tier: str = Field(
+        default="",
+        description="Lab tier directory name, e.g. 'tier1_foundations'.",
+    )
+    run_id: str = Field(
+        default="",
+        description=("Per-run output directory id, e.g. '2026-08-24_071602_Course_Name'."),
+    )
+    files: Any = Field(
+        default=None,
+        description=(
+            "Mapping of relative file paths to file contents. May be a dict or a JSON string."
+        ),
+    )
+    path: str = Field(default="", description="Single file path (write-file command).")
+    base_path: str = Field(
+        default="",
+        description="Base directory (write-directory-tree command).",
+    )
+    course_slug: str = Field(default="", description="URL-safe course slug (export-course-graph).")
+    specification: Any = Field(
+        default=None, description="Course specification dict (export-course-graph)."
+    )
+    learning_objectives: Any = Field(
+        default=None, description="Learning objectives list (export-course-graph)."
+    )
+    key_concepts: Any = Field(default=None, description="Key concepts list (export-course-graph).")
+    prerequisites: Any = Field(
+        default=None, description="Prerequisites list (export-course-graph)."
+    )
+    modules: Any = Field(default=None, description="Modules list (export-course-graph).")
 
 
 class OutputExportTool(BaseTool):
@@ -139,20 +191,33 @@ class OutputExportTool(BaseTool):
     name: str = "output_export_tool"
     description: str = (
         "Writes syllabus, labs, and manifest files to the output/ directory "
-        "tree.  Supports commands: write-syllabus, write-labs, "
-        "generate-manifest, export-course-graph, "
+        "tree.  Call it with a required 'command' keyword argument plus "
+        "command-specific keyword arguments.  Supported commands: "
+        "write-syllabus, write-labs, generate-manifest, export-course-graph, "
         "write-file, write-directory-tree.  "
-        "Accepts a JSON object with a 'command' key and command-specific "
-        "parameters.  Example: "
-        '{"command": "write-syllabus", "course_name": "ML 101", '
-        '"content": "# Syllabus\\n..."}'
+        "Example: command='write-syllabus', course_name='ML 101', "
+        "content='# Syllabus\\n...'"
     )
+
+    args_schema: type[BaseModel] = OutputExportToolArgs
 
     force: bool = False
 
     # ------------------------------------------------------------------
     # CrewAI entry point
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _usage_hint(reason: str) -> str:
+        """Build a constructive usage error that tells the agent how to retry."""
+        return (
+            f"{reason}  Call output_export_tool with a 'command' keyword "
+            "argument, e.g. command='write-labs', course_name='...', "
+            "tier='tier1_foundations', run_id='...', files={...}.  "
+            "Supported commands: write-syllabus, write-labs, "
+            "generate-manifest, export-course-graph, write-file, "
+            "write-directory-tree."
+        )
 
     def _run(self, **kwargs: Any) -> str:
         """Execute the tool command selected by *kwargs*.
@@ -172,26 +237,15 @@ class OutputExportTool(BaseTool):
         if "command" not in kwargs:
             # CrewAI agents may pass a single JSON string as the first arg.
             raw = kwargs.get("input", kwargs.get("request_id", ""))
-            if isinstance(raw, str):
+            if isinstance(raw, str) and raw.strip():
                 try:
                     parsed = json.loads(raw)
                 except (json.JSONDecodeError, TypeError):
-                    return _err(
-                        f"Unrecognised input format.  Expected a JSON object "
-                        f"with a 'command' key.  Got: {raw!r}"
-                    )
+                    return _err(self._usage_hint(f"Invalid JSON input: {raw!r}"))
                 if not isinstance(parsed, dict) or "command" not in parsed:
-                    return _err(
-                        "Missing 'command' key.  Supported commands: "
-                        "write-syllabus, write-labs, generate-manifest, "
-                        "write-file, write-directory-tree."
-                    )
+                    return _err(self._usage_hint("Missing 'command' key in parsed input."))
             else:
-                return _err(
-                    "No 'command' provided.  Supported commands: "
-                    "write-syllabus, write-labs, generate-manifest, "
-                    "write-file, write-directory-tree."
-                )
+                return _err(self._usage_hint("No arguments were provided."))
         else:
             parsed = dict(kwargs)
 
@@ -254,9 +308,9 @@ class OutputExportTool(BaseTool):
         Files are written to one of two locations depending on whether
         a ``run_id`` is provided:
 
-        * **With run_id**: ``output/<run_id>/labs/<course_name>/<tier>/``
+        * **With run_id**: ``output/<run_id>/labs/<tier>/``
           (per-run isolation, the default for pipeline runs).
-        * **Without run_id**: ``output/labs/<course_name>/<tier>/``
+        * **Without run_id**: ``output/labs/<tier>/``
           (shared global path, used by the CLI or standalone tool calls).
 
         The ``course_name`` is sanitised into a safe directory name.

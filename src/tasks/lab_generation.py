@@ -315,9 +315,9 @@ _TOOL_USAGE_MANDATE: str = (
     "correct per-run directory and do NOT leak into the shared global "
     "output folder.\n"
     "2. Generate the labs for **Tier 1** first.  Call `output_export_tool` "
-    'with `command="write-labs"`, passing `course_name`, `tier` '
-    '(e.g. `"tier1_foundations"`), `files` (a dict mapping relative '
-    "paths to file contents), and the `run_id`.\n"
+    "with `command='write-labs'` plus the keyword arguments `course_name`, "
+    "`tier` (e.g. `'tier1_foundations'`), `files` (a dict mapping relative "
+    "paths to file contents), and `run_id`.\n"
     "3. After Tier 1 files are written, move to **Tier 2** and repeat.\n"
     "4. After Tier 2, move to **Tier 3** and repeat.\n"
     "5. Once ALL files for ALL tiers are successfully written to disk, "
@@ -325,19 +325,23 @@ _TOOL_USAGE_MANDATE: str = (
     "Markdown README that serves as the top-level index for all labs.  "
     "It must include the course title, a brief overview, and a numbered "
     "list of every lab with its tier and a one-line description.\n\n"
-    "**Example tool call (you MUST follow this exact structure):**\n"
-    "```json\n"
-    "{{\n"
-    '  "command": "write-labs",\n'
-    '  "course_name": "Javascript OOP Basics",\n'
-    '  "tier": "tier1_foundations",\n'
-    '  "run_id": "2026-08-23_120000_Javascript_OOP_Basics",\n'
-    '  "files": {{\n'
-    '    "starter/README.md": "# Lab 1: Variables and Data Types\\n\\n## 🎯 Learning Objectives\\n...",\n'
-    '    "starter/lab1_variables{ext}": "// TODO(t1): Declare a constant...",\n'
-    '    "solution/README.md": "# Lab 1 Solution: Variables and Data Types\\n\\n...",\n'
-    '    "solution/lab1_variables{ext}": "// Complete working solution with comments\\nconst PI = 3.14159;\\n..."\n'
-    "  }}\n"
+    "**Calling convention (keyword arguments, NOT a JSON string):**\n"
+    "Pass each value as a separate keyword argument to the tool.  For "
+    "`files`, pass a mapping (dictionary) of relative paths to file "
+    "contents.  Example tool call:\n"
+    "```\n"
+    "command = 'write-labs'\n"
+    "course_name = 'Javascript OOP Basics'\n"
+    "tier = 'tier1_foundations'\n"
+    "run_id = '2026-08-23_120000_Javascript_OOP_Basics'\n"
+    "files = {{\n"
+    "    'starter/README.md': '# Lab 1: Variables and Data Types\\n\\n"
+    "## 🎯 Learning Objectives\\n...',\n"
+    "    'starter/lab1_variables{ext}': '// TODO(t1): Declare a constant...',\n"
+    "    'solution/README.md': '# Lab 1 Solution: Variables and Data Types"
+    "\\n\\n...',\n"
+    "    'solution/lab1_variables{ext}': '// Complete working solution with "
+    "comments\\nconst PI = 3.14159;\\n...',\n"
     "}}\n"
     "```\n\n"
     "**Do NOT** attempt to write all file contents inline in your final "

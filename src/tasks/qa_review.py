@@ -33,6 +33,8 @@ def create_qa_review_task(
     agent: Agent,
     course_name: str,
     run_id: str | None = None,
+    lab_developer_role: str | None = None,
+    theory_instructor_role: str | None = None,
     verbose: bool = False,
 ) -> Task:
     """Create a CrewAI Task that performs QA review of generated lab and theory files.
@@ -46,6 +48,15 @@ def create_qa_review_task(
     run_id : str or None
         The unique run identifier (e.g. ``"2026-08-23_120000_Course_Name"``).
         Used to locate the correct per-run output directory.
+    lab_developer_role : str or None
+        The exact ``role`` string of the Lab Developer agent.  When provided,
+        it is injected verbatim into the delegation instructions so the QA
+        Reviewer can pass the correct coworker name to CrewAI's delegation
+        tool (which matches against the full sanitised role, not a short
+        display name).
+    theory_instructor_role : str or None
+        The exact ``role`` string of the Theory Instructor agent (same
+        rationale as ``lab_developer_role``).
     verbose : bool
         Enable detailed task execution logging.
 
@@ -54,26 +65,13 @@ def create_qa_review_task(
     Task
         Fully-configured CrewAI Task ready to be assigned to a Crew.
     """
-    # ── Sanitize course name for filesystem paths ──────────────────────
-    safe_course_name = (
-        course_name.strip()
-        .replace(" ", "_")
-        .replace("/", "-")
-        .replace("\\", "-")
-        .replace(":", "")
-        .replace("*", "")
-        .replace("?", "")
-        .replace('"', "")
-        .replace("<", "")
-        .replace(">", "")
-        .replace("|", "")
-    )
-
     # ── Determine the labs directory path ──────────────────────────────
+    # Labs are written to output/<run_id>/labs/<tier>/ (no course-name
+    # subdirectory), so the review root is the labs/ directory itself.
     if run_id:
-        labs_dir = f"output/{run_id}/labs/{safe_course_name}/"
+        labs_dir = f"output/{run_id}/labs/"
     else:
-        labs_dir = f"output/labs/{safe_course_name}/"
+        labs_dir = "output/labs/"
 
     # ── Build the description ──────────────────────────────────────────
     description = (
@@ -187,12 +185,18 @@ def create_qa_review_task(
         f"---\n\n"
         f"### 🔴  CRITICAL: Delegation Mandate\n\n"
         f"If ANY file fails ANY check, you **MUST** use CrewAI's "
-        f"delegation mechanism to assign a fix task back to the "
-        f"responsible agent:\n\n"
+        f"delegation mechanism (`delegate_work_to_coworker`) to assign a "
+        f"fix task back to the responsible agent:\n\n"
         f"- **Lab code issues (starter/ or solution/)** → Delegate to the "
-        f"**Lab & Project Developer**.\n"
+        f"Lab Developer.  The EXACT coworker name you must use is:\n"
+        f"  **`{lab_developer_role or 'lab & project developer'}`**\n"
         f"- **Theory artifact issues (theory/)** → Delegate to the "
-        f"**Theory Instructor**.\n\n"
+        f"Theory Instructor.  The EXACT coworker name you must use is:\n"
+        f"  **`{theory_instructor_role or 'theory instructor'}`**\n\n"
+        f"⚠️  The coworker name MUST exactly match the role string shown "
+        f"above — CrewAI matches by doing case‑insensitive whitespace‑"
+        f"normalised comparison of the FULL role, so a short name like "
+        f'"Lab Developer" alone will NOT match.\n\n'
         f"Your delegation message must include:\n"
         f"1. **Which specific files** need to be fixed (full paths).\n"
         f"2. **What exactly is wrong** in each file (be specific — quote "
