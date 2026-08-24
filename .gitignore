@@ -67,3 +67,13 @@ docker-compose.override.yml
 
 # --- Generated output (never commit) ---
 output/
+
+
+# START Ruler Generated Files
+/.aider.conf.yml
+/.aider.conf.yml.bak
+/.roo/mcp.json
+/.roo/mcp.json.bak
+/AGENTS.md
+/AGENTS.md.bak
+# END Ruler Generated Files
