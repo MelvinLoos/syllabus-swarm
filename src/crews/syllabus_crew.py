@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import shutil
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -687,7 +686,23 @@ def run_syllabus_crew(
                     # Write the tier-level README (summary).
                     tier_readme = labs_base_path / tier_name / "README.md"
                     write_file(tier_readme, tier_raw, force=True)
-                    print(f"  ✅  {tier_name}: generated successfully.")
+
+                    # Verify actual lab files were written, not just text output.
+                    starter_glob = list((labs_base_path / tier_name).rglob("starter/**/*"))
+                    solution_glob = list((labs_base_path / tier_name).rglob("solution/**/*"))
+                    real_files = [
+                        f
+                        for f in starter_glob + solution_glob
+                        if f.is_file() and f.suffix != ".gitkeep" and f.name != ".gitkeep"
+                    ]
+                    if not real_files:
+                        print(
+                            f"  ⚠️  {tier_name}: agent produced text but wrote no "
+                            f"lab files to starter/ or solution/."
+                        )
+                        return False
+
+                    print(f"  ✅  {tier_name}: generated successfully ({len(real_files)} files).")
                     return True
 
                 except Exception as exc:
@@ -700,11 +715,12 @@ def run_syllabus_crew(
                 "tier3_architecture",
             ]
             all_tier_ok = True
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                futures = {executor.submit(_generate_tier, t): t for t in tiers}
-                for future in as_completed(futures):
-                    if not future.result():
-                        all_tier_ok = False
+            # Sequential execution avoids race conditions on the shared
+            # Agent singleton (the LLM client and iteration tracker are
+            # not thread-safe).
+            for tier_name in tiers:
+                if not _generate_tier(tier_name):
+                    all_tier_ok = False
 
             if all_tier_ok:
                 # Write a top-level index README.

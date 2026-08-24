@@ -454,6 +454,16 @@ def create_lab_generation_task(
             f"You are generating labs for **{tier_label}** only.  "
             f"Do NOT generate labs for other tiers.\n\n"
             f"{tier_section}\n"
+            f"**Course-adaptation guidance:** If the syllabus topics do "
+            f"not naturally extend to this tier's typical depth (e.g. a "
+            f"foundational OOP course may not cover Docker or "
+            f"microservices), adapt the labs to bridge the gap.  For "
+            f"Tier 3 in a basic course, a single-file GitHub Actions "
+            f"workflow or a simple `docker-compose.yml` wrapping the "
+            f"Tier 2 project is perfectly acceptable.  The goal is to "
+            f"expose students to the concepts, not to go deep into "
+            f"infrastructure.  Produce at least 2 lab projects for this "
+            f"tier even if simplified.\n"
         )
     else:
         tier_scope = (
