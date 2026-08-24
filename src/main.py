@@ -55,86 +55,16 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=_PROJECT_ROOT / ".env", override=False)
 
 from crewai import Crew, Process, Task
-from pydantic import BaseModel, Field
 
 from src.agents.intake_specialist import get_intake_specialist
 from src.crews.syllabus_crew import (
     OUTPUT_ROOT,
     CrewResult,
+    generate_run_id,
     run_syllabus_crew,
 )
-
-# ---------------------------------------------------------------------------
-# Pydantic structured-output model for the Intake Specialist
-# ---------------------------------------------------------------------------
-
-
-class CourseSpecification(BaseModel):
-    """Structured output from the Intake Specialist synthesis step.
-
-    This model ensures the LLM returns both the rich pedagogical context
-    AND the exact programming language, eliminating the need for brittle
-    regex-based language detection downstream.
-
-    The four Optional fields — ``grading_scale``, ``student_pathway``,
-    ``year_level``, and ``hardware_constraints`` — can be pre-populated
-    from a cohort profile (``--profile <path>``) to skip those intake
-    questions.  When a field is ``None`` the Intake Specialist will still
-    prompt for it.
-    """
-
-    course_context: str = Field(
-        description="The rich pedagogical context and requirements "
-        "synthesised from the user's answers."
-    )
-    primary_language: str = Field(
-        description="The exact programming language to be used for labs "
-        "(e.g., 'JavaScript', 'Python', 'TypeScript', 'Java', 'Go', 'Rust')."
-    )
-    grading_scale: str | None = Field(
-        default=None,
-        description="The grading scale to use (e.g., 'OVG' for Dutch MBO "
-        "Onvoldoende/Voldoende/Goed, '1-10', 'A-F').  When pre-populated "
-        "from a profile, the Intake Specialist skips this question.",
-    )
-    student_pathway: str | None = Field(
-        default=None,
-        description="The student pathway: 'BOL' (school-based) or 'BBL' "
-        "(work-based).  When pre-populated from a profile, the Intake "
-        "Specialist skips this question.",
-    )
-    year_level: int | None = Field(
-        default=None,
-        ge=1,
-        le=3,
-        description="The student year level (1, 2, or 3).  When pre-populated "
-        "from a profile, the Intake Specialist skips this question.",
-    )
-    hardware_constraints: str | None = Field(
-        default=None,
-        description="Description of hardware/device constraints (e.g., BYOD, "
-        "Chromebooks, thin clients).  When pre-populated from a profile, "
-        "the Intake Specialist skips this question.",
-    )
-
-
-class IntakeSession(BaseModel):
-    """Serializable record of a completed intake interview (Issue #9).
-
-    Captures the full intake conversation and its synthesised result,
-    enabling the ``--load-session`` flag to restore a prior intake
-    and bypass the interactive interview entirely.
-    """
-
-    course_name: str = Field(description="Original course name / topic from the user")
-    questions: str = Field(description="Questions asked by the Intake Specialist agent")
-    answers: str = Field(description="User's answers to the intake questions")
-    course_specification: CourseSpecification = Field(
-        description="Synthesised course specification (course_context + primary_language)"
-    )
-    timestamp: str = Field(description="ISO 8601 timestamp of when the intake interview completed")
-    run_id: str = Field(description="Unique run identifier (YYYY-MM-DD_HHMMSS_course_slug)")
-
+from src.exporters.file_writer import _sanitize_filename
+from src.models import CourseSpecification, IntakeSession
 
 # ---------------------------------------------------------------------------
 # CLI — Argument Parser
@@ -481,35 +411,6 @@ def _get_pre_populated_fields(spec: CourseSpecification) -> list[str]:
     return fields
 
 
-# ---------------------------------------------------------------------------
-# Run-id helpers (duplicated from syllabus_crew.py to keep main self-contained)
-# ---------------------------------------------------------------------------
-
-
-def _sanitize_filename(course_name: str) -> str:
-    """Convert a course name into a safe filesystem name."""
-    return (
-        course_name.strip()
-        .replace(" ", "_")
-        .replace("/", "-")
-        .replace("\\", "-")
-        .replace(":", "")
-        .replace("*", "")
-        .replace("?", "")
-        .replace('"', "")
-        .replace("<", "")
-        .replace(">", "")
-        .replace("|", "")
-    )
-
-
-def _generate_run_id(course_safe_name: str) -> str:
-    """Generate a unique, human-readable run identifier.
-
-    Format: ``YYYY-MM-DD_HHMMSS_<course_safe_name>``
-    """
-    timestamp = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
-    return f"{timestamp}_{course_safe_name}"
 
 
 # ---------------------------------------------------------------------------
@@ -572,7 +473,8 @@ def _resolve_prerequisites(builds_upon_slug: str) -> str:
     if not graph_path.exists():
         print(
             f"❌ No course_graph.json found in {run_dir}.  "
-            f"Ensure the previous course was exported with --export-course-graph.",
+            f"Ensure the previous course was fully generated (course_graph.json "
+            f"is auto-generated by the Output Exporter).",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1163,7 +1065,7 @@ def main(argv: list[str] | None = None) -> None:
 
         # Generate a fresh run_id for this pipeline run.
         safe_name = _sanitize_filename(course_name)
-        run_id = _generate_run_id(safe_name)
+        run_id = generate_run_id(safe_name)
 
         # --- 2. Run the crew ---------------------------------------------
         try:
@@ -1198,7 +1100,7 @@ def main(argv: list[str] | None = None) -> None:
     # Compute run_id *before* the intake so we can save the session
     # inside the same run directory the crew will use later.
     safe_name = _sanitize_filename(course_name)
-    run_id = _generate_run_id(safe_name)
+    run_id = generate_run_id(safe_name)
     run_dir = OUTPUT_ROOT / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 

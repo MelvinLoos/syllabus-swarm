@@ -322,8 +322,7 @@ class OutputExportTool(BaseTool):
         Optional kwargs: ``learning_objectives``, ``key_concepts``,
         ``prerequisites``, ``modules``, ``run_id``.
         """
-        from src.main import CourseSpecification
-        from src.models import CourseGraph, ModuleSummary
+        from src.models import CourseGraph, CourseSpecification, ModuleSummary
 
         course_name = str(params.get("course_name", ""))
         if not course_name:

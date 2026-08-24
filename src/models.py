@@ -4,10 +4,9 @@ models.py — Shared Pydantic Models for Syllabus Swarm
 
 Issue #10: Machine-Readable Course Graph JSON Export (Phase 3 — Export Side)
 
-Defines the **CourseGraph** and **ModuleSummary** Pydantic models that
-compose (rather than duplicate) the existing ``CourseSpecification``
-model.  Both the exporter layer (:mod:`src.exporters.tool`) and future
-module-chaining tools can import from this single module.
+Defines the **CourseSpecification**, **IntakeSession**, **CourseGraph**,
+and **ModuleSummary** Pydantic models that are shared across the entire
+syllabus-swarm codebase.
 
 Design constraint
 -----------------
@@ -19,6 +18,8 @@ Design constraint
 
 Public API
 ----------
+* ``CourseSpecification`` — structured output from Intake Specialist.
+* ``IntakeSession`` — serializable record of a completed intake interview.
 * ``ModuleSummary`` — title, duration_weeks, topics.
 * ``CourseGraph`` — specification, course_slug, learning_objectives,
   key_concepts, prerequisites, modules, generated_at.
@@ -30,7 +31,82 @@ import datetime
 
 from pydantic import BaseModel, Field
 
-from src.main import CourseSpecification
+# ---------------------------------------------------------------------------
+# CourseSpecification
+# ---------------------------------------------------------------------------
+
+
+class CourseSpecification(BaseModel):
+    """Structured output from the Intake Specialist synthesis step.
+
+    This model ensures the LLM returns both the rich pedagogical context
+    AND the exact programming language, eliminating the need for brittle
+    regex-based language detection downstream.
+
+    The four Optional fields — ``grading_scale``, ``student_pathway``,
+    ``year_level``, and ``hardware_constraints`` — can be pre-populated
+    from a cohort profile (``--profile <path>``) to skip those intake
+    questions.  When a field is ``None`` the Intake Specialist will still
+    prompt for it.
+    """
+
+    course_context: str = Field(
+        description="The rich pedagogical context and requirements "
+        "synthesised from the user's answers."
+    )
+    primary_language: str = Field(
+        description="The exact programming language to be used for labs "
+        "(e.g., 'JavaScript', 'Python', 'TypeScript', 'Java', 'Go', 'Rust')."
+    )
+    grading_scale: str | None = Field(
+        default=None,
+        description="The grading scale to use (e.g., 'OVG' for Dutch MBO "
+        "Onvoldoende/Voldoende/Goed, '1-10', 'A-F').  When pre-populated "
+        "from a profile, the Intake Specialist skips this question.",
+    )
+    student_pathway: str | None = Field(
+        default=None,
+        description="The student pathway: 'BOL' (school-based) or 'BBL' "
+        "(work-based).  When pre-populated from a profile, the Intake "
+        "Specialist skips this question.",
+    )
+    year_level: int | None = Field(
+        default=None,
+        ge=1,
+        le=3,
+        description="The student year level (1, 2, or 3).  When pre-populated "
+        "from a profile, the Intake Specialist skips this question.",
+    )
+    hardware_constraints: str | None = Field(
+        default=None,
+        description="Description of hardware/device constraints (e.g., BYOD, "
+        "Chromebooks, thin clients).  When pre-populated from a profile, "
+        "the Intake Specialist skips this question.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# IntakeSession
+# ---------------------------------------------------------------------------
+
+
+class IntakeSession(BaseModel):
+    """Serializable record of a completed intake interview (Issue #9).
+
+    Captures the full intake conversation and its synthesised result,
+    enabling the ``--load-session`` flag to restore a prior intake
+    and bypass the interactive interview entirely.
+    """
+
+    course_name: str = Field(description="Original course name / topic from the user")
+    questions: str = Field(description="Questions asked by the Intake Specialist agent")
+    answers: str = Field(description="User's answers to the intake questions")
+    course_specification: CourseSpecification = Field(
+        description="Synthesised course specification (course_context + primary_language)"
+    )
+    timestamp: str = Field(description="ISO 8601 timestamp of when the intake interview completed")
+    run_id: str = Field(description="Unique run identifier (YYYY-MM-DD_HHMMSS_course_slug)")
+
 
 # ---------------------------------------------------------------------------
 # ModuleSummary
@@ -81,7 +157,6 @@ class CourseGraph(BaseModel):
 
     Example
     -------
-    >>> from src.main import CourseSpecification
     >>> spec = CourseSpecification(
     ...     course_context="Intro to Python for DS.",
     ...     primary_language="Python",
