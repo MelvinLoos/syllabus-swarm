@@ -58,6 +58,7 @@ OUTPUT_EXPORTER: str = "OUTPUT_EXPORTER"
 INTAKE_SPECIALIST: str = "INTAKE_SPECIALIST"
 QA_REVIEWER: str = "QA_REVIEWER"
 THEORY_INSTRUCTOR: str = "THEORY_INSTRUCTOR"
+EDUCATION_DIRECTOR: str = "EDUCATION_DIRECTOR"
 
 # All known agent roles (used by list_agent_configs).
 _KNOWN_ROLES: tuple[str, ...] = (
@@ -67,6 +68,7 @@ _KNOWN_ROLES: tuple[str, ...] = (
     INTAKE_SPECIALIST,
     QA_REVIEWER,
     THEORY_INSTRUCTOR,
+    EDUCATION_DIRECTOR,
 )
 
 # ---------------------------------------------------------------------------
