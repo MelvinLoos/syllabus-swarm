@@ -1,0 +1,51 @@
+# =============================================================================
+# beroeps2_profile.yaml — Cohort Profile: Simulated Industry Project
+# =============================================================================
+
+profile:
+  name: "BEROEPS2 — Simulated Industry Project (BOL)"
+  description: >
+    A flexible, project-centered module where Year 2 students simulate working 
+    in a real-world software development agency. Total time budget is 171 hours 
+    (~4 contact hours per week), though time can be fluidly interchanged with 
+    the PROCES2 companion course. Students build a medium-to-large application 
+    using a recommended tech stack (based on prior coursework) or by successfully 
+    pitching an alternative stack to the teachers.
+
+# --- Cohort Demographics -----------------------------------------------------
+year_level: 2
+student_pathway: "BOL"
+bpv_readiness: "pre-bpv"
+
+# --- Tech Stack Baseline -----------------------------------------------------
+tech_stack:
+  primary_language: "Recommended Stack (e.g., TS/JS/PHP) or Team Pitched"
+  framework: "Recommended Framework or Team Pitched"
+  frontend: "Project Dependent"
+  database: "Project Dependent"
+  version_control: "Git (GitHub with Branching Strategies)"
+  editor: "VS Code"
+  testing:
+    framework: "Stack Dependent"
+    coverage_target: "60%"
+  ci_cd: "GitHub Actions (Linting & Basic Tests)"
+  containerisation: "None (Docker is not supported on school-managed iMacs)"
+  deployment: "School-managed Plesk server"
+
+# --- Kerntaken Emphasis ------------------------------------------------------
+kerntaken_emphasis:
+  P1-K1: "moderate"   # Planning (Applied from PROCES2)
+  P2-K1: "moderate"   # Designing (System architecture)
+  P3-K1: "heavy"      # Building (Core focus of this module)
+  P4-K1: "heavy"      # Testing (QA and peer reviews)
+
+# --- Static Constraints (injected into CourseSpecification) -------------------
+grading_scale: "OVG"
+hardware_constraints: "BYOD laptop or school-managed iMacs. Note: School iMacs do NOT run Docker, so local development must rely on native runtimes."
+
+# --- Assessment --------------------------------------------------------------
+assessment:
+  practical_exams: 0
+  portfolio_items: 2  # e.g., Final Product Repo, Individual Code Contribution
+  proeve_preparation: true
+  code_reviews_per_semester: 4

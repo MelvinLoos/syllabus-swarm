@@ -1,0 +1,51 @@
+# =============================================================================
+# proces2_profile.yaml — Cohort Profile: Development Processes & Agile
+# =============================================================================
+
+profile:
+  name: "PROCES2 — Development Processes & Agile (BOL)"
+  description: >
+    A companion theory course to BEROEPS2, focusing on modern software engineering 
+    methodologies (Scrum, Kanban, Git workflows, CI/CD). Total time budget is 
+    19 hours (~1 contact hour per week). The schedule is highly flexible: sessions 
+    can expand, contract, or be skipped entirely in favor of BEROEPS2 project work 
+    depending on the teams' immediate needs.
+
+# --- Cohort Demographics -----------------------------------------------------
+year_level: 2
+student_pathway: "BOL"
+bpv_readiness: "pre-bpv"
+
+# --- Tech Stack Baseline -----------------------------------------------------
+tech_stack:
+  primary_language: "Agnostic (Focus on Process)"
+  framework: "N/A"
+  frontend: "N/A"
+  database: "N/A"
+  version_control: "Git via GitHub (Advanced workflows, PRs, Merge Conflicts)"
+  editor: "VS Code"
+  testing:
+    framework: "N/A (Focus on the *process* of QA)"
+    coverage_target: "N/A"
+  ci_cd: "GitHub Actions (Theory and configuration)"
+  containerisation: "N/A"
+  deployment: "N/A"
+  project_management: "GitHub Projects / GitHub Issues"
+
+# --- Kerntaken Emphasis ------------------------------------------------------
+kerntaken_emphasis:
+  P1-K1: "heavy"      # Planning (Agile, Scrum, Estimation via GitHub Projects)
+  P2-K1: "light"      # Designing 
+  P3-K1: "none"       # Building (Handled in BEROEPS2)
+  P4-K1: "moderate"   # Testing (Code review processes, QA planning)
+
+# --- Static Constraints (injected into CourseSpecification) -------------------
+grading_scale: "OVG"
+hardware_constraints: "BYOD laptop or school-managed iMacs. Browser-based access to GitHub Projects for project management."
+
+# --- Assessment --------------------------------------------------------------
+assessment:
+  practical_exams: 1  # e.g., Git merge conflict resolution or Agile theory test
+  portfolio_items: 2  # e.g., Sprint Retrospectives, Process Reflection Report
+  proeve_preparation: true
+  code_reviews_per_semester: 0
