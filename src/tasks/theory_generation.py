@@ -113,8 +113,8 @@ _ARTIFACT_REQUIREMENTS: str = (
     "5. **Add a visible error banner area** — Include a hidden ``<div>`` at "
     "the top of the page that becomes visible when errors occur:\n"
     "   ```html\n"
-    "   <div id=\"error-banner\" style=\"display:none;background:#e94560;"
-    "color:#fff;padding:1rem;font-family:monospace;\"></div>\n"
+    '   <div id="error-banner" style="display:none;background:#e94560;'
+    'color:#fff;padding:1rem;font-family:monospace;"></div>\n'
     "   ```\n"
     "   Write a helper function ``showError(msg)`` that populates and "
     "displays this banner.\n\n"

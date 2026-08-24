@@ -604,14 +604,10 @@ def run_syllabus_crew(
                     tier_results = validate_theory_directory(theory_dir)
                     if tier_results:
                         report = format_validation_report(tier_results)
-                        validation_reports.append(
-                            f"### {tier_dir_name}\n\n{report}"
-                        )
+                        validation_reports.append(f"### {tier_dir_name}\n\n{report}")
 
                         # Check if any file has errors (not just warnings)
-                        tier_has_errors = any(
-                            r.error_count > 0 for r in tier_results
-                        )
+                        tier_has_errors = any(r.error_count > 0 for r in tier_results)
                         if tier_has_errors:
                             all_theory_valid = False
                             if verbose:
@@ -626,9 +622,8 @@ def run_syllabus_crew(
                 # Write the validation report alongside the theory files
                 # so developers can see what passed/failed.
                 if validation_reports:
-                    full_report = (
-                        "# Theory File Validation Report\n\n"
-                        + "\n---\n\n".join(validation_reports)
+                    full_report = "# Theory File Validation Report\n\n" + "\n---\n\n".join(
+                        validation_reports
                     )
                     report_path = run_dir / "theory" / "VALIDATION_REPORT.md"
                     report_path.parent.mkdir(parents=True, exist_ok=True)

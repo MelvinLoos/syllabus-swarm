@@ -16,7 +16,6 @@ import pytest
 
 from src.exporters.tool import OutputExportTool
 
-
 # ===================================================================
 # _handle_write_directory_tree — JSON auto-parse
 # ===================================================================
@@ -50,10 +49,12 @@ class TestHandleWriteDirectoryTree:
         tool = self._make_tool()
         base = str(self._tmp / "theory_json")
         files_dict = {"artifact.html": "<h1>Hello</h1>", "walkthrough.sh": "#!/bin/bash\necho hi"}
-        result = tool._handle_write_directory_tree({
-            "base_path": base,
-            "files": json.dumps(files_dict),
-        })
+        result = tool._handle_write_directory_tree(
+            {
+                "base_path": base,
+                "files": json.dumps(files_dict),
+            }
+        )
         parsed = json.loads(result)
         assert parsed["status"] == "ok", f"Expected ok, got: {parsed}"
         assert (self._tmp / "theory_json" / "artifact.html").read_text() == "<h1>Hello</h1>"
@@ -63,10 +64,12 @@ class TestHandleWriteDirectoryTree:
         """A native Python dict for 'files' still works (regression)."""
         tool = self._make_tool()
         base = str(self._tmp / "theory_native")
-        result = tool._handle_write_directory_tree({
-            "base_path": base,
-            "files": {"index.html": "<p>Native</p>"},
-        })
+        result = tool._handle_write_directory_tree(
+            {
+                "base_path": base,
+                "files": {"index.html": "<p>Native</p>"},
+            }
+        )
         parsed = json.loads(result)
         assert parsed["status"] == "ok", f"Expected ok, got: {parsed}"
         assert (self._tmp / "theory_native" / "index.html").read_text() == "<p>Native</p>"
@@ -74,10 +77,12 @@ class TestHandleWriteDirectoryTree:
     def test_rejects_invalid_json_string(self) -> None:
         """An unparseable JSON string returns an error."""
         tool = self._make_tool()
-        result = tool._handle_write_directory_tree({
-            "base_path": str(self._tmp / "bad_json"),
-            "files": "not valid json {{{",
-        })
+        result = tool._handle_write_directory_tree(
+            {
+                "base_path": str(self._tmp / "bad_json"),
+                "files": "not valid json {{{",
+            }
+        )
         parsed = json.loads(result)
         assert parsed["status"] == "error"
         assert "could not parse json" in parsed["message"].lower()
@@ -85,9 +90,11 @@ class TestHandleWriteDirectoryTree:
     def test_rejects_missing_files_param(self) -> None:
         """Missing 'files' parameter returns an error."""
         tool = self._make_tool()
-        result = tool._handle_write_directory_tree({
-            "base_path": str(self._tmp / "no_files"),
-        })
+        result = tool._handle_write_directory_tree(
+            {
+                "base_path": str(self._tmp / "no_files"),
+            }
+        )
         parsed = json.loads(result)
         assert parsed["status"] == "error"
         assert "missing or invalid" in parsed["message"].lower()
@@ -95,9 +102,11 @@ class TestHandleWriteDirectoryTree:
     def test_rejects_missing_base_path(self) -> None:
         """Missing 'base_path' parameter returns an error."""
         tool = self._make_tool()
-        result = tool._handle_write_directory_tree({
-            "files": {"a.txt": "content"},
-        })
+        result = tool._handle_write_directory_tree(
+            {
+                "files": {"a.txt": "content"},
+            }
+        )
         parsed = json.loads(result)
         assert parsed["status"] == "error"
         assert "base_path" in parsed["message"].lower()
@@ -106,11 +115,13 @@ class TestHandleWriteDirectoryTree:
         """JSON-encoded files with special characters (newlines, quotes) are preserved."""
         tool = self._make_tool()
         base = str(self._tmp / "special_chars")
-        content_with_specials = 'const x = "hello";\nconst y = \'world\';\n// comment'
-        result = tool._handle_write_directory_tree({
-            "base_path": base,
-            "files": json.dumps({"code.js": content_with_specials}),
-        })
+        content_with_specials = "const x = \"hello\";\nconst y = 'world';\n// comment"
+        result = tool._handle_write_directory_tree(
+            {
+                "base_path": base,
+                "files": json.dumps({"code.js": content_with_specials}),
+            }
+        )
         parsed = json.loads(result)
         assert parsed["status"] == "ok"
         written = (self._tmp / "special_chars" / "code.js").read_text()
@@ -147,10 +158,12 @@ class TestHandleWriteFile:
         """A JSON-encoded string for 'content' is unwrapped to the inner string."""
         tool = self._make_tool()
         dest = str(self._tmp / "unwrapped.txt")
-        result = tool._handle_write_file({
-            "path": dest,
-            "content": json.dumps("Hello from JSON string"),
-        })
+        result = tool._handle_write_file(
+            {
+                "path": dest,
+                "content": json.dumps("Hello from JSON string"),
+            }
+        )
         parsed = json.loads(result)
         assert parsed["status"] == "ok", f"Expected ok, got: {parsed}"
         assert (self._tmp / "unwrapped.txt").read_text() == "Hello from JSON string"
@@ -159,10 +172,12 @@ class TestHandleWriteFile:
         """A plain (non-JSON) string is written as-is (regression)."""
         tool = self._make_tool()
         dest = str(self._tmp / "raw.txt")
-        result = tool._handle_write_file({
-            "path": dest,
-            "content": "Just a plain string, not JSON",
-        })
+        result = tool._handle_write_file(
+            {
+                "path": dest,
+                "content": "Just a plain string, not JSON",
+            }
+        )
         parsed = json.loads(result)
         assert parsed["status"] == "ok", f"Expected ok, got: {parsed}"
         assert (self._tmp / "raw.txt").read_text() == "Just a plain string, not JSON"
@@ -172,10 +187,12 @@ class TestHandleWriteFile:
         tool = self._make_tool()
         dest = str(self._tmp / "obj.txt")
         content = json.dumps({"key": "value"})
-        result = tool._handle_write_file({
-            "path": dest,
-            "content": content,
-        })
+        result = tool._handle_write_file(
+            {
+                "path": dest,
+                "content": content,
+            }
+        )
         parsed = json.loads(result)
         assert parsed["status"] == "ok"
         # The content is a JSON string representing an object, so it should
@@ -185,9 +202,11 @@ class TestHandleWriteFile:
     def test_rejects_missing_path(self) -> None:
         """Missing 'path' parameter returns an error."""
         tool = self._make_tool()
-        result = tool._handle_write_file({
-            "content": "some content",
-        })
+        result = tool._handle_write_file(
+            {
+                "content": "some content",
+            }
+        )
         parsed = json.loads(result)
         assert parsed["status"] == "error"
         assert "path" in parsed["message"].lower()
@@ -195,9 +214,11 @@ class TestHandleWriteFile:
     def test_rejects_missing_content(self) -> None:
         """Missing 'content' parameter returns an error."""
         tool = self._make_tool()
-        result = tool._handle_write_file({
-            "path": str(self._tmp / "missing.txt"),
-        })
+        result = tool._handle_write_file(
+            {
+                "path": str(self._tmp / "missing.txt"),
+            }
+        )
         parsed = json.loads(result)
         assert parsed["status"] == "error"
         assert "content" in parsed["message"].lower()

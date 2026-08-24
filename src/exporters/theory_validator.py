@@ -21,11 +21,9 @@ from __future__ import annotations
 
 import re
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -122,9 +120,7 @@ def _validate_html(file_path: Path) -> ValidationResult:
         raw_html = file_path.read_text(encoding="utf-8")
     except Exception as exc:
         result.passed = False
-        result.issues.append(
-            ValidationIssue("error", f"Cannot read file: {exc}")
-        )
+        result.issues.append(ValidationIssue("error", f"Cannot read file: {exc}"))
         return result
 
     # ── Check 1: HTML well-formedness ──────────────────────────────────
@@ -133,9 +129,7 @@ def _validate_html(file_path: Path) -> ValidationResult:
         extractor.feed(raw_html)
     except Exception as exc:
         result.passed = False
-        result.issues.append(
-            ValidationIssue("error", f"HTML parsing failed: {exc}")
-        )
+        result.issues.append(ValidationIssue("error", f"HTML parsing failed: {exc}"))
         return result
 
     # ── Check 2: Scripts in <head> ─────────────────────────────────────
@@ -169,14 +163,9 @@ def _validate_html(file_path: Path) -> ValidationResult:
                 result.issues.append(
                     ValidationIssue(
                         "error",
-                        f"JavaScript syntax error in script block {i + 1}: "
-                        f"{stderr}",
+                        f"JavaScript syntax error in script block {i + 1}: {stderr}",
                         line=script["start_line"],
-                        snippet=(
-                            js_code[:200] + "..."
-                            if len(js_code) > 200
-                            else js_code
-                        ),
+                        snippet=(js_code[:200] + "..." if len(js_code) > 200 else js_code),
                     )
                 )
                 result.passed = False
@@ -226,11 +215,9 @@ def _validate_html(file_path: Path) -> ValidationResult:
 
         # Check for missing try/catch around main initialization
         has_try_catch = bool(
-            re.search(r"try\s*\{", js_code)
-            and re.search(r"catch\s*\([^)]*\)\s*\{", js_code)
+            re.search(r"try\s*\{", js_code) and re.search(r"catch\s*\([^)]*\)\s*\{", js_code)
         )
         has_domcontentloaded = "DOMContentLoaded" in js_code
-        has_addEventListener = "addEventListener" in js_code
 
         if not has_try_catch and len(js_code) > 500:
             result.issues.append(
@@ -288,9 +275,7 @@ def _validate_shell(file_path: Path) -> ValidationResult:
         content = file_path.read_text(encoding="utf-8")
     except Exception as exc:
         result.passed = False
-        result.issues.append(
-            ValidationIssue("error", f"Cannot read file: {exc}")
-        )
+        result.issues.append(ValidationIssue("error", f"Cannot read file: {exc}"))
         return result
 
     # ── Check 1: Shebang ───────────────────────────────────────────────
@@ -309,8 +294,7 @@ def _validate_shell(file_path: Path) -> ValidationResult:
         result.issues.append(
             ValidationIssue(
                 "warning",
-                f"Shebang '{first_line}' does not reference bash.  "
-                "Expected '#!/usr/bin/env bash'.",
+                f"Shebang '{first_line}' does not reference bash.  Expected '#!/usr/bin/env bash'.",
                 line=1,
             )
         )
@@ -389,17 +373,13 @@ def _validate_markdown(file_path: Path) -> ValidationResult:
       2. At least one Mermaid diagram is present.
       3. Basic Markdown structure (has H1, has content).
     """
-    result = ValidationResult(
-        file_path=file_path, format_type="markdown", passed=True
-    )
+    result = ValidationResult(file_path=file_path, format_type="markdown", passed=True)
 
     try:
         content = file_path.read_text(encoding="utf-8")
     except Exception as exc:
         result.passed = False
-        result.issues.append(
-            ValidationIssue("error", f"Cannot read file: {exc}")
-        )
+        result.issues.append(ValidationIssue("error", f"Cannot read file: {exc}"))
         return result
 
     lines = content.split("\n")
@@ -416,8 +396,7 @@ def _validate_markdown(file_path: Path) -> ValidationResult:
                 result.issues.append(
                     ValidationIssue(
                         "error",
-                        f"Nested mermaid code block — missing closing ``` "
-                        f"before line {i}.",
+                        f"Nested mermaid code block — missing closing ``` before line {i}.",
                         line=i,
                     )
                 )
@@ -467,8 +446,7 @@ def _validate_markdown(file_path: Path) -> ValidationResult:
         result.issues.append(
             ValidationIssue(
                 "warning",
-                "No H1 heading (# Title) found.  Every artifact should "
-                "start with a clear title.",
+                "No H1 heading (# Title) found.  Every artifact should start with a clear title.",
             )
         )
 
@@ -564,8 +542,8 @@ def format_validation_report(results: list[ValidationResult]) -> str:
     lines: list[str] = [
         "## Theory File Validation Report",
         "",
-        f"| Metric | Count |",
-        f"|--------|-------|",
+        "| Metric | Count |",
+        "|--------|-------|",
         f"| Files checked | {total_files} |",
         f"| Files passed | {passed_files} |",
         f"| Files with errors | {total_files - passed_files} |",
