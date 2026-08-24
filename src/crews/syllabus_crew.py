@@ -37,6 +37,10 @@ from src.exporters import (
     update_output_manifest,
     write_file,
 )
+from src.exporters.theory_validator import (
+    format_validation_report,
+    validate_theory_directory,
+)
 from src.tasks.lab_generation import create_lab_generation_task
 from src.tasks.qa_review import create_qa_review_task
 from src.tasks.syllabus_generation import create_syllabus_generation_task
@@ -551,6 +555,7 @@ def run_syllabus_crew(
     # ── 2. Theory Instructor ───────────────────────────────────────────
     theory_ok = False
     theory_error: str | None = None
+    theory_instructor: Agent | None = None
 
     if skip_theory:
         theory_ok = True
@@ -576,12 +581,71 @@ def run_syllabus_crew(
                 theory_result.raw if hasattr(theory_result, "raw") else str(theory_result)
             ).strip()
 
-            if theory_raw:
-                theory_ok = True
+            if not theory_raw:
+                theory_error = "Theory Instructor produced no output."
+            else:
                 if verbose:
                     print("  ✅  Theory artifacts generated successfully.")
-            else:
-                theory_error = "Theory Instructor produced no output."
+
+                # ── 2.1. Validate theory files ─────────────────────────
+                # Run deterministic syntax/structure checks on every
+                # generated theory file.  This catches issues like
+                # JavaScript syntax errors, missing null checks, scripts
+                # in <head>, unclosed Mermaid fences, and missing bash
+                # shebangs BEFORE a student opens the file.
+                all_theory_valid = True
+                validation_reports: list[str] = []
+
+                for tier_dir_name, _tier_label in _TIERS:
+                    theory_dir = labs_base_path / tier_dir_name / "theory"
+                    if not theory_dir.exists():
+                        continue
+
+                    tier_results = validate_theory_directory(theory_dir)
+                    if tier_results:
+                        report = format_validation_report(tier_results)
+                        validation_reports.append(
+                            f"### {tier_dir_name}\n\n{report}"
+                        )
+
+                        # Check if any file has errors (not just warnings)
+                        tier_has_errors = any(
+                            r.error_count > 0 for r in tier_results
+                        )
+                        if tier_has_errors:
+                            all_theory_valid = False
+                            if verbose:
+                                for r in tier_results:
+                                    if r.error_count > 0:
+                                        print(
+                                            f"  ❌  Theory validation: "
+                                            f"{r.file_path.name} has "
+                                            f"{r.error_count} error(s)"
+                                        )
+
+                # Write the validation report alongside the theory files
+                # so developers can see what passed/failed.
+                if validation_reports:
+                    full_report = (
+                        "# Theory File Validation Report\n\n"
+                        + "\n---\n\n".join(validation_reports)
+                    )
+                    report_path = run_dir / "theory" / "VALIDATION_REPORT.md"
+                    report_path.parent.mkdir(parents=True, exist_ok=True)
+                    write_file(report_path, full_report, force=True)
+
+                if all_theory_valid:
+                    theory_ok = True
+                    if verbose:
+                        print("  ✅  All theory files passed validation.")
+                else:
+                    theory_error = (
+                        "One or more theory files failed post-generation "
+                        "validation.  See VALIDATION_REPORT.md in the "
+                        "theory/ directory for details."
+                    )
+                    if verbose:
+                        print(f"  ❌  {theory_error}", file=sys.stderr)
 
         except Exception as exc:
             theory_error = str(exc)
@@ -680,9 +744,11 @@ def run_syllabus_crew(
     qa_error: str | None = None
     qa_report: str | None = None
 
-    if skip_qa or skip_labs or not labs_ok:
+    # QA runs when either labs or theory were generated (or both).
+    # Skip only if explicitly disabled or nothing was produced.
+    if skip_qa or (not labs_ok and not theory_ok):
         qa_ok = True  # Nothing to review, or explicitly skipped.
-    elif lab_dev is not None:
+    elif lab_dev is not None or theory_instructor is not None:
         try:
             qa_reviewer = get_qa_reviewer(verbose=verbose)
             qa_task = create_qa_review_task(
@@ -692,10 +758,18 @@ def run_syllabus_crew(
                 verbose=verbose,
             )
 
-            # CRITICAL: Both agents must be in the SAME Crew array so
-            # the QA Reviewer can delegate fixes back to the Lab Developer.
+            # CRITICAL: All agents that may receive delegation MUST be in
+            # the SAME Crew array.  The QA Reviewer delegates lab fixes to
+            # the Lab Developer and theory fixes to the Theory Instructor.
+            qa_agents: list[Agent] = []
+            if lab_dev is not None:
+                qa_agents.append(lab_dev)
+            if theory_instructor is not None:
+                qa_agents.append(theory_instructor)
+            qa_agents.append(qa_reviewer)
+
             qa_crew = Crew(
-                agents=[lab_dev, qa_reviewer],
+                agents=qa_agents,
                 tasks=[qa_task],
                 process=Process.sequential,
                 verbose=verbose,
