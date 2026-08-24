@@ -17,8 +17,8 @@
 git clone git@github.com:MelvinLoos/syllabus-swarm.git
 cd syllabus-swarm
 
-# 2. Set up the virtual environment
-python3 -m venv .venv
+# 2. Set up the virtual environment (requires Python 3.12+)
+python3.12 -m venv .venv
 source .venv/bin/activate
 
 # 3. Install dependencies
@@ -29,7 +29,7 @@ cp .env.example .env
 # Edit .env and paste your OpenRouter API key
 
 # 5. Verify the connection
-python -m src.llm_factory
+python3.12 -m src.llm_factory
 ```
 
 ---
