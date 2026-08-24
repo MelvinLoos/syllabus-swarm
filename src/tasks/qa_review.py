@@ -1,22 +1,26 @@
 """
-qa_review.py — QA Review Task (Technical + Didactic Checks)
-============================================================
+qa_review.py — QA Review Task (Technical + Didactic + Theory Checks)
+====================================================================
 
 Issue #7: AI-Driven Feedback Loop — QA Reviewer Agent
 
 Defines a CrewAI **Task** that, when executed by the QA Reviewer agent,
-performs a thorough review of all generated lab files.  The task mandates
-two distinct checks:
+performs a thorough review of all generated lab AND theory files.  The
+task mandates three distinct checks:
 
   1. **Technical Correctness Check** — Zero syntax errors, no missing
      imports, no hallucinated variables, completely self-contained execution.
   2. **Didactic & Clarity Check** — README instructions and code comments
      use clear, accessible language suited for MBO4 vocational students.
      TODO markers must be actionable and unambiguous.
+  3. **Theory Artifact Review** — Interactive HTML/JS files, terminal
+     scripts, and Mermaid.js Markdown diagrams are functional, self-contained,
+     and didactically appropriate for MBO4 students.
 
-If either check fails, the QA Reviewer is explicitly instructed to use
-CrewAI's delegation mechanism to assign a fix task back to the Lab &
-Project Developer with specific, actionable feedback.
+If any check fails, the QA Reviewer is explicitly instructed to use
+CrewAI's delegation mechanism to assign a fix task back to the
+responsible agent (Lab Developer for lab files, Theory Instructor for
+theory files) with specific, actionable feedback.
 """
 
 from __future__ import annotations
@@ -31,7 +35,7 @@ def create_qa_review_task(
     run_id: str | None = None,
     verbose: bool = False,
 ) -> Task:
-    """Create a CrewAI Task that performs QA review of generated lab files.
+    """Create a CrewAI Task that performs QA review of generated lab and theory files.
 
     Parameters
     ----------
@@ -73,21 +77,26 @@ def create_qa_review_task(
 
     # ── Build the description ──────────────────────────────────────────
     description = (
-        f"## QA Review — Generated Labs for: {course_name}\n\n"
+        f"## QA Review — Generated Labs & Theory for: {course_name}\n\n"
         f"**Labs Directory:** `{labs_dir}`\n\n"
         f"---\n\n"
         f"### Your Task\n\n"
-        f"You must review ALL files in the labs directory above.  Use your "
-        f"`DirectoryReadTool` to list the directory contents, then use your "
-        f"`FileReadTool` to read every source file and README.\n\n"
+        f"You must review ALL files in the labs directory above — including "
+        f"both lab code AND theory artifacts.  Use your `DirectoryReadTool` "
+        f"to list the directory contents, then use your `FileReadTool` to "
+        f"read every source file, README, and theory artifact.\n\n"
         f"The labs are organised into three tiers:\n"
         f"- `tier1_foundations/` — Single-file exercises with TODO markers.\n"
         f"- `tier2_application/` — Multi-file mini-projects.\n"
         f"- `tier3_architecture/` — Service-oriented systems.\n\n"
-        f"Each tier has `starter/` and `solution/` subdirectories.\n\n"
+        f"Each tier has THREE subdirectories:\n"
+        f"- `starter/` — Scaffolded exercises with TODO markers.\n"
+        f"- `solution/` — Reference implementations.\n"
+        f"- `theory/` — Interactive theory artifacts (HTML, shell scripts, "
+        f"or Mermaid.js Markdown) that teach concepts BEFORE the lab work.\n\n"
         f"---\n\n"
-        f"### 🔍  Check 1: Technical Correctness\n\n"
-        f"For EVERY source file (both starter/ and solution/), verify:\n\n"
+        f"### 🔍  Check 1: Technical Correctness (Lab Code)\n\n"
+        f"For EVERY source file in starter/ and solution/, verify:\n\n"
         f"- **Zero syntax errors** — The code must be valid and parseable "
         f"in the target language.  Check for missing brackets, unmatched "
         f"quotes, incorrect indentation, and invalid keywords.\n"
@@ -107,8 +116,9 @@ def create_qa_review_task(
         f"- **Solution code must actually work** — The solution/ files "
         f"must be complete, runnable implementations that produce the "
         f"expected output described in the README.\n\n"
-        f"### 🔍  Check 2: Didactic & Clarity Check\n\n"
-        f"For EVERY README.md and code comment, verify:\n\n"
+        f"### 🔍  Check 2: Didactic & Clarity Check (Lab Code)\n\n"
+        f"For EVERY README.md and code comment in starter/ and solution/, "
+        f"verify:\n\n"
         f"- **Clear, accessible language** — The text must be understandable "
         f"by MBO4 vocational students (Dutch HBO-equivalent, ages 16-20).  "
         f"Avoid overly academic jargon, complex theoretical explanations, "
@@ -132,12 +142,57 @@ def create_qa_review_task(
         f"required sections: Learning Objectives, Key Concepts, "
         f"Prerequisites, Getting Started, Project Structure, Lab "
         f"Instructions, Humanics Reflection, and Additional Resources.\n\n"
+        f"### 🔍  Check 3: Theory Artifact Review (theory/)\n\n"
+        f"For EVERY file in each tier's `theory/` subdirectory, verify:\n\n"
+        f"**For HTML/JS files (Format A):**\n"
+        f"- Opens in a browser without JavaScript errors — check that all "
+        f"DOM queries reference elements that actually exist in the HTML.\n"
+        f"- Interactive controls (buttons, sliders, inputs) are wired to "
+        f"event handlers that exist in the script.\n"
+        f"- Learning objectives are listed at the top of the page.\n"
+        f"- The visualisation or interactive element actually demonstrates "
+        f"the concept from the syllabus — not just a generic demo.\n"
+        f"- Scripts are placed at the end of `<body>` or wrapped in "
+        f"`DOMContentLoaded`.\n"
+        f"- Error handling is present: try/catch around initialization, "
+        f"null checks on DOM queries, visible error display if something "
+        f"goes wrong.\n"
+        f"- No broken references: SVG element IDs, data structure keys, "
+        f"and function names are consistent throughout.\n\n"
+        f"**For shell scripts (Format B):**\n"
+        f"- Starts with `#!/usr/bin/env bash` and `set -euo pipefail`.\n"
+        f"- Every step prints a clear heading explaining *what* and *why*.\n"
+        f"- Pauses between steps with `read -r -p 'Press Enter to "
+        f"continue...'` so the student controls the pace.\n"
+        f"- Commands are correct for the target environment (check for "
+        f"typos in command names, missing flags, incorrect paths).\n"
+        f"- Includes a summary at the end recapping what was learned.\n\n"
+        f"**For Mermaid.js Markdown files (Format C):**\n"
+        f"- At least 2 distinct Mermaid diagrams are present.\n"
+        f"- All ` ```mermaid ` code blocks are properly closed with ` ``` `.\n"
+        f"- Diagram syntax is valid Mermaid.js that renders correctly.\n"
+        f"- Explanatory prose between diagrams — not just a wall of "
+        f"diagrams.\n"
+        f"- Has an H1 title, learning objectives, and a 'Key Takeaways' "
+        f"section.\n\n"
+        f"**For ALL theory formats:**\n"
+        f"- The file is truly self-contained — no broken CDN links, no "
+        f"missing assets, no external dependencies that aren't documented.\n"
+        f"- Language is MBO4-appropriate: clear, concrete, avoids "
+        f"unnecessary academic jargon.\n"
+        f"- The concept taught matches the tier's topic in the syllabus.\n"
+        f"- The artifact actually *works* — a student opening/running it "
+        f"should immediately see the intended interactive experience, not "
+        f"a blank page or error message.\n\n"
         f"---\n\n"
         f"### 🔴  CRITICAL: Delegation Mandate\n\n"
-        f"If ANY lab file fails EITHER the Technical Correctness Check OR "
-        f"the Didactic & Clarity Check, you **MUST** use CrewAI's "
-        f"delegation mechanism to assign a fix task back to the **Lab & "
-        f"Project Developer**.\n\n"
+        f"If ANY file fails ANY check, you **MUST** use CrewAI's "
+        f"delegation mechanism to assign a fix task back to the "
+        f"responsible agent:\n\n"
+        f"- **Lab code issues (starter/ or solution/)** → Delegate to the "
+        f"**Lab & Project Developer**.\n"
+        f"- **Theory artifact issues (theory/)** → Delegate to the "
+        f"**Theory Instructor**.\n\n"
         f"Your delegation message must include:\n"
         f"1. **Which specific files** need to be fixed (full paths).\n"
         f"2. **What exactly is wrong** in each file (be specific — quote "
@@ -148,7 +203,8 @@ def create_qa_review_task(
         f"'fix this').\n\n"
         f"Do NOT attempt to fix the files yourself.  Your role is to "
         f"*review and delegate*, not to *rewrite*.  The Lab Developer "
-        f"is responsible for implementing fixes based on your feedback.\n\n"
+        f"and Theory Instructor are responsible for implementing fixes "
+        f"based on your feedback.\n\n"
         f"---\n\n"
         f"### 📋  Expected Output\n\n"
         f"Produce a comprehensive **Markdown QA Report** with the following "
@@ -157,31 +213,37 @@ def create_qa_review_task(
         f"# QA Review Report — {course_name}\n\n"
         f"## Summary\n"
         f"- Total files reviewed: [count]\n"
-        f"- Technical issues found: [count]\n"
-        f"- Didactic issues found: [count]\n"
-        f"- Delegation(s) sent to Lab Developer: [yes/no]\n"
+        f"- Lab technical issues found: [count]\n"
+        f"- Lab didactic issues found: [count]\n"
+        f"- Theory artifact issues found: [count]\n"
+        f"- Delegation(s) sent: [Lab Developer: yes/no, Theory Instructor: yes/no]\n"
         f"- Final verdict: [PASSED / NEEDS FIXES]\n\n"
-        f"## Technical Correctness Check\n"
-        f"[For each file: PASSED or FAILED with specific issues]\n\n"
-        f"## Didactic & Clarity Check\n"
-        f"[For each file: PASSED or FAILED with specific issues]\n\n"
+        f"## Technical Correctness Check (Lab Code)\n"
+        f"[For each lab file: PASSED or FAILED with specific issues]\n\n"
+        f"## Didactic & Clarity Check (Lab Code)\n"
+        f"[For each lab file: PASSED or FAILED with specific issues]\n\n"
+        f"## Theory Artifact Review\n"
+        f"[For each theory file: PASSED or FAILED with specific issues]\n\n"
         f"## Delegation Summary\n"
-        f"[If fixes were delegated: what was sent to the Lab Developer]\n\n"
+        f"[If fixes were delegated: what was sent to which agent]\n\n"
         f"## Sign-Off\n"
-        f"[Final confirmation that the code is ready for students, "
-        f"or a clear statement that fixes are still needed]\n"
+        f"[Final confirmation that ALL content — labs AND theory — is "
+        f"ready for students, or a clear statement that fixes are still "
+        f"needed]\n"
         f"```\n\n"
-        f"If ALL checks pass for ALL files, your sign-off must explicitly "
-        f"state: '✅ **QA SIGN-OFF: All labs are technically correct and "
-        f"didactically appropriate for MBO4 students.  Ready for classroom "
-        f"use.**'\n"
+        f"If ALL checks pass for ALL files (labs AND theory), your sign-off "
+        f"must explicitly state: '✅ **QA SIGN-OFF: All labs and theory "
+        f"artifacts are technically correct and didactically appropriate "
+        f"for MBO4 students.  Ready for classroom use.**'\n"
     )
 
     expected_output = (
         "A comprehensive Markdown QA Report with Technical Correctness "
-        "Check results, Didactic & Clarity Check results, a Delegation "
-        "Summary (if any fixes were delegated to the Lab Developer), and "
-        "a final Sign-Off confirming readiness for MBO4 students."
+        "Check results for lab code, Didactic & Clarity Check results for "
+        "lab code, Theory Artifact Review results for theory/ files, a "
+        "Delegation Summary (if any fixes were delegated to the Lab "
+        "Developer or Theory Instructor), and a final Sign-Off confirming "
+        "readiness for MBO4 students."
     )
 
     return Task(
