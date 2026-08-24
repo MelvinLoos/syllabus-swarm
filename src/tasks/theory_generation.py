@@ -105,13 +105,13 @@ _TOOL_USAGE_MANDATE: str = (
     "the artifact.\n\n"
     "**Base path for each tier:**\n"
     "```\n"
-    "output/<run_id>/labs/<course_name>/<tier>/theory/\n"
+    "output/<run_id>/labs/<tier>/theory/\n"
     "```\n\n"
     "**Example tool call for Tier 1 (you MUST follow this exact structure):**\n"
     "```json\n"
     "{{\n"
     '  "command": "write-directory-tree",\n'
-    '  "base_path": "output/2026-08-23_120000_Javascript_OOP/labs/Javascript_OOP/tier1_foundations/theory",\n'
+    '  "base_path": "output/2026-08-23_120000_Javascript_OOP/labs/tier1_foundations/theory",\n'
     '  "files": {{\n'
     '    "sorting_visualizer.html": "<!DOCTYPE html>\\n<html lang=\\"en\\">\\n..."\n'
     "  }}\n"
@@ -198,9 +198,9 @@ def create_theory_task(
         'Use the `output_export_tool` with `command="write-directory-tree"` '
         "to write ALL theory artifacts to disk.  Write exactly ONE artifact "
         "per tier into the `theory/` subfolder of each tier's lab directory:\n\n"
-        "- `output/<run_id>/labs/<course_name>/tier1_foundations/theory/`\n"
-        "- `output/<run_id>/labs/<course_name>/tier2_application/theory/`\n"
-        "- `output/<run_id>/labs/<course_name>/tier3_architecture/theory/`\n\n"
+        "- `output/<run_id>/labs/tier1_foundations/theory/`\n"
+        "- `output/<run_id>/labs/tier2_application/theory/`\n"
+        "- `output/<run_id>/labs/tier3_architecture/theory/`\n\n"
         "**Once all files are written**, produce a Markdown summary listing "
         "each tier, the format chosen (A/B/C), the filename, and a one-line "
         "description of the artifact.\n"
