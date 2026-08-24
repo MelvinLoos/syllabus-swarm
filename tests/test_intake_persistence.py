@@ -15,12 +15,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from src.main import (
-    CourseSpecification,
-    IntakeSession,
-    _generate_run_id,
-    _sanitize_filename,
-)
+from src.crews.syllabus_crew import generate_run_id
+from src.exporters.file_writer import _sanitize_filename
+from src.models import CourseSpecification, IntakeSession
 
 # ---------------------------------------------------------------------------
 # Shared test data
@@ -225,12 +222,12 @@ class TestHelpers:
         assert '"' not in result
 
     def test_generate_run_id_contains_timestamp(self) -> None:
-        rid = _generate_run_id("Test_Course")
+        rid = generate_run_id("Test_Course")
         # Format: YYYY-MM-DD_HHMMSS_course_name
         date_part = rid.split("_")[0]
         assert len(date_part) == 10  # "YYYY-MM-DD"
         assert date_part[4] == "-" and date_part[7] == "-"
 
     def test_generate_run_id_includes_safe_name(self) -> None:
-        rid = _generate_run_id("My_Course")
+        rid = generate_run_id("My_Course")
         assert rid.endswith("_My_Course")

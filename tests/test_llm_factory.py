@@ -101,14 +101,8 @@ class TestModelFallbackChain:
             config = get_effective_config(CURRICULUM_ARCHITECT)
             assert config["model"] == "openai/default-model"
 
-    def test_fallback_to_legacy_openrouter_model(self) -> None:
-        """Tier 3: legacy OPENROUTER_MODEL used when no per-agent/default."""
-        with patch.dict(os.environ, _env({"OPENROUTER_MODEL": "openai/legacy-model"}), clear=True):
-            config = get_effective_config(CURRICULUM_ARCHITECT)
-            assert config["model"] == "openai/legacy-model"
-
     def test_fallback_to_hardcoded_default_model(self) -> None:
-        """Tier 4: hardcoded default used when nothing is configured."""
+        """Tier 3: hardcoded default used when nothing is configured."""
         with patch.dict(os.environ, _env(), clear=True):
             config = get_effective_config(CURRICULUM_ARCHITECT)
             assert config["model"] == HARDCODED_MODEL
@@ -130,7 +124,6 @@ class TestNumericFallbackChain:
                 {
                     "AGENT_CURRICULUM_ARCHITECT_TEMPERATURE": "0.7",
                     "AGENT_DEFAULT_TEMPERATURE": "0.5",
-                    "AGENT_TEMPERATURE": "0.3",
                 }
             ),
             clear=True,
@@ -140,21 +133,12 @@ class TestNumericFallbackChain:
         # Tier 2: agent-wide default
         with patch.dict(
             os.environ,
-            _env(
-                {
-                    "AGENT_DEFAULT_TEMPERATURE": "0.5",
-                    "AGENT_TEMPERATURE": "0.3",
-                }
-            ),
+            _env({"AGENT_DEFAULT_TEMPERATURE": "0.5"}),
             clear=True,
         ):
             assert build_llm_for_agent(CURRICULUM_ARCHITECT).temperature == 0.5
 
-        # Tier 3: legacy global
-        with patch.dict(os.environ, _env({"AGENT_TEMPERATURE": "0.3"}), clear=True):
-            assert build_llm_for_agent(CURRICULUM_ARCHITECT).temperature == 0.3
-
-        # Tier 4: hardcoded default
+        # Tier 3: hardcoded default
         with patch.dict(os.environ, _env(), clear=True):
             assert build_llm_for_agent(CURRICULUM_ARCHITECT).temperature == HARDCODED_TEMPERATURE
 
@@ -166,7 +150,6 @@ class TestNumericFallbackChain:
                 {
                     "AGENT_CURRICULUM_ARCHITECT_MAX_TOKENS": "2048",
                     "AGENT_DEFAULT_MAX_TOKENS": "4096",
-                    "AGENT_MAX_TOKENS": "8192",
                 }
             ),
             clear=True,
@@ -176,21 +159,12 @@ class TestNumericFallbackChain:
         # Tier 2: agent-wide default
         with patch.dict(
             os.environ,
-            _env(
-                {
-                    "AGENT_DEFAULT_MAX_TOKENS": "4096",
-                    "AGENT_MAX_TOKENS": "8192",
-                }
-            ),
+            _env({"AGENT_DEFAULT_MAX_TOKENS": "4096"}),
             clear=True,
         ):
             assert build_llm_for_agent(CURRICULUM_ARCHITECT).max_tokens == 4096
 
-        # Tier 3: legacy global
-        with patch.dict(os.environ, _env({"AGENT_MAX_TOKENS": "8192"}), clear=True):
-            assert build_llm_for_agent(CURRICULUM_ARCHITECT).max_tokens == 8192
-
-        # Tier 4: hardcoded default
+        # Tier 3: hardcoded default
         with patch.dict(os.environ, _env(), clear=True):
             assert build_llm_for_agent(CURRICULUM_ARCHITECT).max_tokens == HARDCODED_MAX_TOKENS
 
@@ -226,22 +200,22 @@ class TestBuildLLMNoEnvironment:
 # ---------------------------------------------------------------------------
 
 
-class TestBackwardCompatibility:
-    """Legacy globals keep existing agents working unchanged."""
+class TestAgentDefaultFallback:
+    """AGENT_DEFAULT_* vars drive all agents without per-agent overrides."""
 
-    def test_legacy_globals_drive_all_agents_without_per_agent_vars(self) -> None:
+    def test_agent_default_drives_all_agents_without_per_agent_vars(self) -> None:
         env = _env(
             {
-                "OPENROUTER_MODEL": "openai/legacy-model",
-                "AGENT_TEMPERATURE": "0.4",
-                "AGENT_TOP_P": "0.2",
-                "AGENT_MAX_TOKENS": "4096",
+                "AGENT_DEFAULT_MODEL": "openai/default-model",
+                "AGENT_DEFAULT_TEMPERATURE": "0.4",
+                "AGENT_DEFAULT_TOP_P": "0.2",
+                "AGENT_DEFAULT_MAX_TOKENS": "4096",
             }
         )
         with patch.dict(os.environ, env, clear=True):
             for role in ALL_ROLES:
                 llm = build_llm_for_agent(role)
-                assert llm.model == "legacy-model", f"Failed for role {role}"
+                assert llm.model == "default-model", f"Failed for role {role}"
                 assert llm.temperature == 0.4, f"Failed for role {role}"
                 assert llm.top_p == 0.2, f"Failed for role {role}"
                 assert llm.max_tokens == 4096, f"Failed for role {role}"
@@ -251,7 +225,7 @@ class TestBackwardCompatibility:
         env = _env(
             {
                 "AGENT_CURRICULUM_ARCHITECT_MODEL": "openai/architect-only",
-                "OPENROUTER_MODEL": "openai/legacy-model",
+                "AGENT_DEFAULT_MODEL": "openai/default-model",
             }
         )
         with patch.dict(os.environ, env, clear=True):
@@ -260,8 +234,8 @@ class TestBackwardCompatibility:
             exporter = build_llm_for_agent(OUTPUT_EXPORTER)
 
             assert architect.model == "architect-only"
-            assert lab_dev.model == "legacy-model"
-            assert exporter.model == "legacy-model"
+            assert lab_dev.model == "default-model"
+            assert exporter.model == "default-model"
 
 
 # ---------------------------------------------------------------------------

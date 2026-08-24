@@ -19,7 +19,6 @@ from src.exporters.file_writer import (
     _sanitize_filename,
     write_directory_tree,
     write_file,
-    write_lab_file,
     write_rubric,
     write_syllabus,
 )
@@ -317,7 +316,7 @@ class TestWriteDirectoryTree:
 
 
 class TestConvenienceHelpers:
-    """Tests for write_syllabus, write_rubric, and write_lab_file."""
+    """Tests for write_syllabus and write_rubric."""
 
     @pytest.fixture(autouse=True)
     def _patch_root_and_output_paths(self, tmp_path: Path) -> None:
@@ -348,40 +347,6 @@ class TestConvenienceHelpers:
         assert path.parent.name == "rubrics"
         assert path.name == "Data_Science_with_Python-rubric.md"
         assert "# Rubric Content" in path.read_text()
-
-    def test_write_lab_file_creates_correct_tiered_path(self) -> None:
-        """Lab file is written to the correct tiered directory structure."""
-        path = write_lab_file(
-            "Data Science with Python",
-            "tier1_foundations",
-            "starter",
-            "lab1.py",
-            "# TODO: implement\n",
-        )
-        assert path.exists()
-        parts = path.relative_to(self._tmp)
-        expected = Path("output/labs/Data_Science_with_Python/tier1_foundations/starter/lab1.py")
-        assert parts == expected
-
-    def test_write_lab_file_rejects_invalid_subfolder(self) -> None:
-        """A subfolder other than 'starter' or 'solution' raises ValueError."""
-        with pytest.raises(ValueError, match="subfolder must be"):
-            write_lab_file("Course", "tier1", "invalid", "file.py", "content")
-
-    def test_write_lab_file_accepts_starter_subfolder(self) -> None:
-        """'starter' subfolder is accepted."""
-        path = write_lab_file("Course", "tier1", "starter", "file.py", "content")
-        assert "starter" in str(path)
-
-    def test_write_lab_file_accepts_solution_subfolder(self) -> None:
-        """'solution' subfolder is accepted."""
-        path = write_lab_file("Course", "tier1", "solution", "file.py", "content")
-        assert "solution" in str(path)
-
-    def test_write_lab_file_sanitizes_filename(self) -> None:
-        """The filename component is sanitised."""
-        path = write_lab_file("Course", "tier1", "starter", "bad?file:name.py", "content")
-        assert path.name == "bad-file-name.py"
 
     def test_write_syllabus_overwrite_protection(self) -> None:
         """Overwrite protection works for write_syllabus."""
