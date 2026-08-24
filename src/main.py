@@ -411,8 +411,6 @@ def _get_pre_populated_fields(spec: CourseSpecification) -> list[str]:
     return fields
 
 
-
-
 # ---------------------------------------------------------------------------
 # Module chaining — resolve prerequisites from a previous course
 # ---------------------------------------------------------------------------
