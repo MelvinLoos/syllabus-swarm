@@ -29,6 +29,7 @@ from pathlib import Path
 from crewai import Agent, Crew, Process
 
 from src.agents.curriculum_architect import get_architect
+from src.agents.education_director import get_education_director
 from src.agents.lab_developer import get_lab_developer
 from src.agents.qa_reviewer import get_qa_reviewer
 from src.agents.theory_instructor import get_theory_instructor
@@ -39,6 +40,7 @@ from src.exporters import (
 from src.tasks.lab_generation import create_lab_generation_task
 from src.tasks.qa_review import create_qa_review_task
 from src.tasks.syllabus_generation import create_syllabus_generation_task
+from src.tasks.syllabus_review import create_syllabus_review_task
 from src.tasks.theory_generation import create_theory_task
 
 # ---------------------------------------------------------------------------
@@ -123,6 +125,9 @@ class CrewResult:
         qa_report: str | None = None,
         theory_ok: bool = True,
         theory_error: str | None = None,
+        syllabus_review_ok: bool = True,
+        syllabus_review_error: str | None = None,
+        syllabus_review_report: str | None = None,
     ) -> None:
         self.syllabus_path = syllabus_path
         self.labs_base_path = labs_base_path
@@ -136,10 +141,19 @@ class CrewResult:
         self.qa_report = qa_report
         self.theory_ok = theory_ok
         self.theory_error = theory_error
+        self.syllabus_review_ok = syllabus_review_ok
+        self.syllabus_review_error = syllabus_review_error
+        self.syllabus_review_report = syllabus_review_report
 
     @property
     def all_succeeded(self) -> bool:
-        return self.syllabus_ok and self.theory_ok and self.labs_ok and self.qa_ok
+        return (
+            self.syllabus_ok
+            and self.syllabus_review_ok
+            and self.theory_ok
+            and self.labs_ok
+            and self.qa_ok
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +290,7 @@ def run_syllabus_crew(
     verbose: bool = False,
     architect_agent: Agent | None = None,
     lab_dev_agent: Agent | None = None,
+    skip_syllabus_review: bool = False,
     skip_theory: bool = False,
     skip_labs: bool = False,
     skip_qa: bool = False,
@@ -287,10 +302,13 @@ def run_syllabus_crew(
     Execution order:
       1. Curriculum Architect generates a syllabus (or loads from disk if
          *resume_dir* is provided).
-      2. Theory Instructor generates interactive theory artifacts from the
+      2. Education Director audits the syllabus for time-budget math,
+         workload realism, scheduling sanity, and MBO4 appropriateness.
+         Can delegate fixes back to the Curriculum Architect.
+      3. Theory Instructor generates interactive theory artifacts from the
          syllabus.
-      3. Lab & Project Developer processes the syllabus to generate tiered labs.
-      4. QA Reviewer inspects all generated labs and delegates fixes if needed.
+      4. Lab & Project Developer processes the syllabus to generate tiered labs.
+      5. QA Reviewer inspects all generated labs and delegates fixes if needed.
 
     All output is scoped under ``output/<run_id>/`` where *run_id* is a
     timestamp + course-slug combination, ensuring every pipeline run
@@ -315,6 +333,8 @@ def run_syllabus_crew(
         Pre-built Curriculum Architect agent; lazily created when None.
     lab_dev_agent : Agent or None
         Pre-built Lab Developer agent; lazily created when None.
+    skip_syllabus_review : bool
+        If True, skip the Education Director feasibility audit step.
     skip_theory : bool
         If True, skip the Theory Instructor step.
     skip_labs : bool
@@ -482,6 +502,51 @@ def run_syllabus_crew(
                 f"# {course_name} — Syllabus Generation Failed\n\n**Error:** {syllabus_error}\n",
                 force=True,
             )
+
+    # ── 1.5. Education Director — Syllabus Feasibility Audit ───────────
+    syllabus_review_ok = False
+    syllabus_review_error: str | None = None
+    syllabus_review_report: str | None = None
+
+    if skip_syllabus_review:
+        syllabus_review_ok = True
+    elif syllabus_raw:
+        try:
+            education_director = get_education_director(verbose=verbose)
+            review_task = create_syllabus_review_task(
+                agent=education_director,
+                course_name=course_name,
+                syllabus_context=syllabus_raw,
+                verbose=verbose,
+            )
+
+            # CRITICAL: Both agents must be in the SAME Crew array so
+            # the Education Director can delegate fixes back to the
+            # Curriculum Architect.
+            review_crew = Crew(
+                agents=[architect, education_director],
+                tasks=[review_task],
+                process=Process.sequential,
+                verbose=verbose,
+            )
+            review_result = review_crew.kickoff()
+            syllabus_review_report = (
+                review_result.raw if hasattr(review_result, "raw") else str(review_result)
+            ).strip()
+
+            if syllabus_review_report:
+                syllabus_review_ok = True
+                if verbose:
+                    print("  ✅  Syllabus Feasibility Audit completed.")
+            else:
+                syllabus_review_error = "Education Director produced no output."
+
+        except Exception as exc:
+            syllabus_review_error = str(exc)
+            if verbose:
+                print(f"  ❌  Syllabus Feasibility Audit failed: {exc}", file=sys.stderr)
+    else:
+        syllabus_review_error = "Skipped — Curriculum Architect produced no syllabus to audit."
 
     # ── 2. Theory Instructor ───────────────────────────────────────────
     theory_ok = False
@@ -676,4 +741,7 @@ def run_syllabus_crew(
         qa_report=qa_report,
         theory_ok=theory_ok,
         theory_error=theory_error,
+        syllabus_review_ok=syllabus_review_ok,
+        syllabus_review_error=syllabus_review_error,
+        syllabus_review_report=syllabus_review_report,
     )

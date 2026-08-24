@@ -391,6 +391,16 @@ class OutputExportTool(BaseTool):
         if not content:
             return _err("Missing required parameter: 'content'.")
 
+        # Auto-parse JSON strings — CrewAI agents often pass content
+        # as a JSON-encoded string rather than a native string.
+        if isinstance(content, str):
+            try:
+                parsed = json.loads(content)
+                if isinstance(parsed, str):
+                    content = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass  # Not JSON; use the raw string as-is.
+
         path = write_file(file_path, content, force=self.force)
         return _ok("File written.", path)
 
@@ -401,7 +411,24 @@ class OutputExportTool(BaseTool):
             return _err("Missing required parameter: 'base_path'.")
 
         files_raw = params.get("files")
-        if not files_raw or not isinstance(files_raw, dict):
+        if not files_raw:
+            return _err(
+                "Missing or invalid 'files' parameter.  "
+                "Expected a dict of {relative_path: content}."
+            )
+
+        # Auto-parse JSON strings — CrewAI agents often pass the files
+        # mapping as a JSON-encoded string rather than a native dict.
+        if isinstance(files_raw, str):
+            try:
+                files_raw = json.loads(files_raw)
+            except (json.JSONDecodeError, TypeError):
+                return _err(
+                    "Invalid 'files' parameter: could not parse JSON string.  "
+                    "Expected a JSON object mapping relative paths to content."
+                )
+
+        if not isinstance(files_raw, dict):
             return _err(
                 "Missing or invalid 'files' parameter.  "
                 "Expected a dict of {relative_path: content}."
