@@ -73,15 +73,7 @@ def create_lab_developer(
     if llm is None:
         llm = build_llm_for_agent(LAB_DEVELOPER)
 
-    role = (
-        "Lab & Project Developer — Master Coding-Challenge Designer\n\n"
-        "You are a seasoned software engineer and educator who specialises "
-        "in translating curriculum blueprints into concrete, hands-on "
-        "coding laboratories.  Your designs span three progressive tiers "
-        "of difficulty, each building on the previous to create a coherent "
-        "learning arc from syntax fundamentals to distributed systems "
-        "architecture."
-    )
+    role = "Senior Lab and Project Developer"
 
     goal = (
         "Generate comprehensive, self-contained tiered coding labs that "
@@ -100,6 +92,12 @@ def create_lab_developer(
     )
 
     backstory = (
+        "You are a seasoned software engineer and educator who specialises "
+        "in translating curriculum blueprints into concrete, hands-on "
+        "coding laboratories.  Your designs span three progressive tiers "
+        "of difficulty, each building on the previous to create a coherent "
+        "learning arc from syntax fundamentals to distributed systems "
+        "architecture.\n\n"
         "You spent fifteen years as a senior software engineer across "
         "startups and enterprise cloud providers before pivoting into "
         "technical education.  You witnessed the gap between what graduates "

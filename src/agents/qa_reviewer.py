@@ -67,14 +67,7 @@ def create_qa_reviewer(
     if llm is None:
         llm = build_llm_for_agent(QA_REVIEWER)
 
-    role = (
-        "Senior QA Engineer & MBO4 Didactic Expert\n\n"
-        "You are a strict but fair senior developer who has pivoted into "
-        "quality assurance for educational content.  You understand the "
-        "MBO4 target audience perfectly — vocational students who learn by "
-        "doing, not by reading academic papers.  You refuse to let broken "
-        "code or vague instructions reach students."
-    )
+    role = "Strict MBO4 QA Reviewer and Didactic Expert"
 
     goal = (
         "Verify that all generated lab code is 100% bug-free and that the "
@@ -95,6 +88,11 @@ def create_qa_reviewer(
     )
 
     backstory = (
+        "You are a strict but fair senior developer who has pivoted into "
+        "quality assurance for educational content.  You understand the "
+        "MBO4 target audience perfectly — vocational students who learn by "
+        "doing, not by reading academic papers.  You refuse to let broken "
+        "code or vague instructions reach students.\n\n"
         "You spent twelve years as a senior software engineer before "
         "pivoting into QA for educational technology.  You've seen too many "
         "students struggle — not because they lacked ability, but because "

@@ -52,15 +52,7 @@ def create_intake_specialist(
     if llm is None:
         llm = build_llm_for_agent(INTAKE_SPECIALIST)
 
-    role = (
-        "MBO4 Curriculum Intake Specialist\n\n"
-        "You are the first point of contact in the syllabus generation "
-        "pipeline.  Your job is to interview the user — typically an "
-        "MBO instructor or curriculum coordinator — and extract the "
-        "precise technical and pedagogical requirements needed to produce "
-        "a high-quality, SBB-aligned syllabus for Dutch MBO niveau 4 "
-        "Software Developer opleidingen."
-    )
+    role = "MBO4 Curriculum Intake Specialist"
 
     goal = (
         "Interview the user to extract technical and pedagogical "
@@ -83,6 +75,12 @@ def create_intake_specialist(
     )
 
     backstory = (
+        "You are the first point of contact in the syllabus generation "
+        "pipeline.  Your job is to interview the user — typically an "
+        "MBO instructor or curriculum coordinator — and extract the "
+        "precise technical and pedagogical requirements needed to produce "
+        "a high-quality, SBB-aligned syllabus for Dutch MBO niveau 4 "
+        "Software Developer opleidingen.\n\n"
         "You are an expert in Dutch vocational education (MBO niveau 4) "
         "with deep knowledge of the SBB Kwalificatiedossiers for Software "
         "Developer (crebonummer 25604).  You understand that MBO students "

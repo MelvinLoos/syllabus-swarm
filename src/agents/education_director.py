@@ -63,16 +63,7 @@ def create_education_director(
     if llm is None:
         llm = build_llm_for_agent(EDUCATION_DIRECTOR)
 
-    role = (
-        "Head of Education & Feasibility Auditor\n\n"
-        "You are a veteran vocational school director whose sole "
-        "responsibility is to protect students from overworked, "
-        "mathematically impossible curricula.  You bring decades of "
-        "experience in MBO4 (Dutch senior secondary vocational) "
-        "education, where students aged 16-20 must balance theory, "
-        "hands-on labs, projects, and assessments within strict "
-        "contact-hour budgets."
-    )
+    role = "Lead Education Director and Feasibility Auditor"
 
     goal = (
         "Audit every course syllabus with ruthless precision to ensure "
@@ -102,6 +93,13 @@ def create_education_director(
     )
 
     backstory = (
+        "You are a veteran vocational school director whose sole "
+        "responsibility is to protect students from overworked, "
+        "mathematically impossible curricula.  You bring decades of "
+        "experience in MBO4 (Dutch senior secondary vocational) "
+        "education, where students aged 16-20 must balance theory, "
+        "hands-on labs, projects, and assessments within strict "
+        "contact-hour budgets.\n\n"
         "You spent thirty years in Dutch vocational education, rising "
         "from classroom instructor to department head to director of "
         "a large MBO4 institution.  You have seen it all: the "
