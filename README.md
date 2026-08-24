@@ -73,7 +73,7 @@ All models are served via **OpenRouter** (`https://openrouter.ai/api/v1`).
 
 ## Model Configuration
 
-Every agent obtains its LLM through a shared factory (`src/llm_factory.py`) that resolves model, temperature, top_p, and max_tokens through a **4-tier fallback chain**.
+Every agent obtains its LLM through a shared factory (`src/llm_factory.py`) that resolves model, temperature, top_p, and max_tokens through a **3-tier fallback chain**.
 
 ### Environment Variable Convention
 
@@ -100,16 +100,12 @@ Supported properties and their defaults:
           │
 2. AGENT_DEFAULT_{PROPERTY}   ← Catch-all default for all agents
           │
-3. Legacy globals             ← OPENROUTER_MODEL / AGENT_TEMPERATURE /
-          │                     AGENT_MAX_TOKENS (deprecated, kept for
-          │                     backward compatibility)
-          │
-4. Hardcoded defaults         ← Values in src/llm_factory.py
+3. Hardcoded defaults         ← Values in src/llm_factory.py
 ```
 
-### Backward-Compatible Fallback
+### Hardcoded Fallback
 
-The hardcoded catch-all model is `deepseek/deepseek-v4-pro`. Any agent that lacks both a per-agent override and an `AGENT_DEFAULT_MODEL` will use this model. This ensures existing `.env` files without per-agent configuration continue to work.
+The hardcoded catch-all model is `deepseek/deepseek-v4-pro`. Any agent that lacks both a per-agent override and an `AGENT_DEFAULT_MODEL` will use this model.
 
 ### Per-Agent Model Defaults (v2)
 

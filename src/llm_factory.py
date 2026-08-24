@@ -12,13 +12,11 @@ variables directly.
 Key features
 ------------
 * Agent role constants to eliminate magic strings across the codebase.
-* 4-tier fallback chain for every property (MODEL, TEMPERATURE, TOP_P,
+* 3-tier fallback chain for every property (MODEL, TEMPERATURE, TOP_P,
   MAX_TOKENS):
   1. Per-agent override  → ``AGENT_{ROLE}_{PROPERTY}``
   2. Agent-wide default   → ``AGENT_DEFAULT_{PROPERTY}``
-  3. Legacy globals       → ``OPENROUTER_MODEL`` / ``AGENT_TEMPERATURE`` /
-     ``AGENT_MAX_TOKENS`` (deprecated — kept for backward compatibility)
-  4. Hardcoded sensible defaults
+  3. Hardcoded sensible defaults
 * Always targets ``https://openrouter.ai/api/v1`` as the base URL.
 * :func:`list_agent_configs` prints the effective configuration of every
   known agent for diagnostics and debugging.
@@ -95,16 +93,14 @@ def _resolve_property(
     role: str,
     property_name: str,
     *,
-    legacy_key: str,
     hardcoded_default: str,
 ) -> str:
-    """Resolve a single string property through the 4-tier fallback chain.
+    """Resolve a single string property through the 3-tier fallback chain.
 
     Tier order (highest to lowest priority):
       1. ``AGENT_{role}_{property_name}``  — per-agent override
       2. ``AGENT_DEFAULT_{property_name}`` — agent-wide default
-      3. *legacy_key*                       — deprecated global env var
-      4. *hardcoded_default*               — baked-in fallback
+      3. *hardcoded_default*               — baked-in fallback
     """
     # Tier 1: per-agent override
     value = os.getenv(f"AGENT_{role}_{property_name}")
@@ -116,13 +112,7 @@ def _resolve_property(
     if value is not None:
         return value
 
-    # Tier 3: legacy global
-    if legacy_key:
-        value = os.getenv(legacy_key)
-        if value is not None:
-            return value
-
-    # Tier 4: hardcoded default
+    # Tier 3: hardcoded default
     return hardcoded_default
 
 
@@ -130,10 +120,9 @@ def _resolve_numeric(
     role: str,
     property_name: str,
     *,
-    legacy_key: str,
-    hardcoded_default: float,
-) -> float:
-    """Resolve a numeric property through the 4-tier fallback chain.
+    hardcoded_default: float | int,
+) -> float | int:
+    """Resolve a numeric property through the 3-tier fallback chain.
 
     Same semantics as _resolve_property but returns a float (or int,
     inferred from hardcoded_default).
@@ -141,7 +130,6 @@ def _resolve_numeric(
     raw = _resolve_property(
         role,
         property_name,
-        legacy_key=legacy_key,
         hardcoded_default=str(hardcoded_default),
     )
     try:
@@ -165,7 +153,7 @@ def build_llm_for_agent(
     """Build a ``crewai.LLM`` instance configured for a specific agent.
 
     All agents connect through **OpenRouter** (https://openrouter.ai/api/v1).
-    Model, temperature, top_p, and max_tokens are resolved through a 4-tier
+    Model, temperature, top_p, and max_tokens are resolved through a 3-tier
     fallback chain that allows per-agent customisation while always falling
     back to a working configuration — even when no environment variables are
     set.
@@ -198,21 +186,18 @@ def build_llm_for_agent(
     model: str = _resolve_property(
         agent_role,
         "MODEL",
-        legacy_key="OPENROUTER_MODEL",
         hardcoded_default=_DEFAULT_MODEL,
     )
 
     temperature: float = _resolve_numeric(
         agent_role,
         "TEMPERATURE",
-        legacy_key="AGENT_TEMPERATURE",
         hardcoded_default=_DEFAULT_TEMPERATURE,
     )
 
     top_p: float = _resolve_numeric(
         agent_role,
         "TOP_P",
-        legacy_key="AGENT_TOP_P",
         hardcoded_default=_DEFAULT_TOP_P,
     )
 
@@ -220,7 +205,6 @@ def build_llm_for_agent(
         _resolve_numeric(
             agent_role,
             "MAX_TOKENS",
-            legacy_key="AGENT_MAX_TOKENS",
             hardcoded_default=_DEFAULT_MAX_TOKENS,
         )
     )
@@ -249,26 +233,22 @@ def get_effective_config(agent_role: str) -> dict[str, object]:
         "model": _resolve_property(
             agent_role,
             "MODEL",
-            legacy_key="OPENROUTER_MODEL",
             hardcoded_default=_DEFAULT_MODEL,
         ),
         "temperature": _resolve_numeric(
             agent_role,
             "TEMPERATURE",
-            legacy_key="AGENT_TEMPERATURE",
             hardcoded_default=_DEFAULT_TEMPERATURE,
         ),
         "top_p": _resolve_numeric(
             agent_role,
             "TOP_P",
-            legacy_key="AGENT_TOP_P",
             hardcoded_default=_DEFAULT_TOP_P,
         ),
         "max_tokens": int(
             _resolve_numeric(
                 agent_role,
                 "MAX_TOKENS",
-                legacy_key="AGENT_MAX_TOKENS",
                 hardcoded_default=_DEFAULT_MAX_TOKENS,
             )
         ),
@@ -302,15 +282,6 @@ def list_agent_configs() -> None:
         label = value if value is not None else "(not set)"
         print(f"  {env_key:.<40} {label}")
 
-    legacy_map = {
-        "OPENROUTER_MODEL": "MODEL",
-        "AGENT_TEMPERATURE": "TEMPERATURE",
-        "AGENT_MAX_TOKENS": "MAX_TOKENS",
-    }
-    for legacy_key, _prop in legacy_map.items():
-        value = os.getenv(legacy_key)
-        label = value if value is not None else "(not set)"
-        print(f"  (legacy) {legacy_key:.<32} {label}")
     print()
 
     for role in _KNOWN_ROLES:
