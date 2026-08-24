@@ -11,6 +11,7 @@ All tests mock ``build_llm_for_agent`` so no network calls are made.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,6 +25,7 @@ from src.agents.education_director import (
     create_education_director,
     get_education_director,
 )
+from src.agents.intake_specialist import create_intake_specialist
 from src.agents.lab_developer import (
     create_lab_developer,
     get_lab_developer,
@@ -59,6 +61,29 @@ def mock_llm() -> MagicMock:
     llm.max_tokens = 8192
     llm.base_url = "https://openrouter.ai/api/v1"
     return llm
+
+
+@pytest.mark.parametrize(
+    ("factory", "expected_role"),
+    [
+        (create_curriculum_architect, "Senior MBO4 Curriculum Architect"),
+        (create_education_director, "Lead Education Director and Feasibility Auditor"),
+        (create_intake_specialist, "MBO4 Curriculum Intake Specialist"),
+        (create_lab_developer, "Senior Lab and Project Developer"),
+        (create_qa_reviewer, "Strict MBO4 QA Reviewer and Didactic Expert"),
+        (create_theory_instructor, "MBO4 Theory Instructor and Technical Writer"),
+    ],
+)
+def test_agent_roles_are_single_line(
+    factory: Callable[..., Agent],
+    expected_role: str,
+    mock_llm: MagicMock,
+) -> None:
+    """Every agent role must be a single-line identifier (no newlines)."""
+    with patch(f"{factory.__module__}.build_llm_for_agent", return_value=mock_llm):
+        agent = factory()
+    assert agent.role == expected_role
+    assert "\n" not in agent.role
 
 
 # ===================================================================
@@ -196,7 +221,7 @@ class TestCreateLabDeveloper:
             return_value=mock_llm,
         ) as mock_build:
             agent = create_lab_developer()
-            assert "Lab & Project Developer" in agent.role
+            assert "Lab and Project Developer" in agent.role
             mock_build.assert_called_once_with(LAB_DEVELOPER)
 
     def test_goal_contains_three_tiers(self, mock_llm: MagicMock) -> None:
@@ -533,7 +558,7 @@ class TestModuleSingletons:
 
             agent = get_lab_developer()
             assert isinstance(agent, Agent)
-            assert "Lab & Project Developer" in agent.role
+            assert "Lab and Project Developer" in agent.role
 
     def test_get_lab_developer_is_idempotent(self, mock_llm: MagicMock) -> None:
         """Calling get_lab_developer twice returns the same instance."""
@@ -617,7 +642,7 @@ class TestModuleSingletons:
 
             agent = get_education_director()
             assert isinstance(agent, Agent)
-            assert "Head of Education" in agent.role
+            assert "Education Director" in agent.role
 
     def test_get_education_director_is_idempotent(self, mock_llm: MagicMock) -> None:
         """Calling get_education_director twice returns the same instance."""
@@ -772,7 +797,7 @@ class TestCreateEducationDirector:
             return_value=mock_llm,
         ) as mock_build:
             agent = create_education_director()
-            assert "Head of Education" in agent.role
+            assert "Education Director" in agent.role
             assert "Feasibility Auditor" in agent.role
             mock_build.assert_called_once_with(EDUCATION_DIRECTOR)
 
