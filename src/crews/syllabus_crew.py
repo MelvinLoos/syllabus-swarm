@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -656,14 +657,8 @@ def run_syllabus_crew(
             # Run three separate per-tier tasks to keep prompt sizes
             # manageable for the LLM.  Each task focuses on a single
             # tier and writes its files via the output_export_tool.
-            tiers = [
-                "tier1_foundations",
-                "tier2_application",
-                "tier3_architecture",
-            ]
-            all_tier_ok = True
 
-            for tier_name in tiers:
+            def _generate_tier(tier_name: str) -> bool:
                 tier_task = create_lab_generation_task(
                     agent=lab_dev,
                     course_name=course_name,
@@ -688,16 +683,29 @@ def run_syllabus_crew(
 
                     if not tier_raw:
                         print(f"  ⚠️  {tier_name}: produced no output.")
-                        all_tier_ok = False
-                    else:
-                        # Write the tier-level README (summary).
-                        tier_readme = labs_base_path / tier_name / "README.md"
-                        write_file(tier_readme, tier_raw, force=True)
-                        print(f"  ✅  {tier_name}: generated successfully.")
+                        return False
+
+                    # Write the tier-level README (summary).
+                    tier_readme = labs_base_path / tier_name / "README.md"
+                    write_file(tier_readme, tier_raw, force=True)
+                    print(f"  ✅  {tier_name}: generated successfully.")
+                    return True
 
                 except Exception as exc:
                     print(f"  ❌  {tier_name}: {exc}")
-                    all_tier_ok = False
+                    return False
+
+            tiers = [
+                "tier1_foundations",
+                "tier2_application",
+                "tier3_architecture",
+            ]
+            all_tier_ok = True
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = {executor.submit(_generate_tier, t): t for t in tiers}
+                for future in as_completed(futures):
+                    if not future.result():
+                        all_tier_ok = False
 
             if all_tier_ok:
                 # Write a top-level index README.
