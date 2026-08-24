@@ -37,6 +37,7 @@ from src.exporters import (
     update_output_manifest,
     write_file,
 )
+from src.exporters.file_writer import _sanitize_filename
 from src.exporters.theory_validator import (
     format_validation_report,
     validate_theory_directory,
@@ -60,23 +61,6 @@ _TIERS: list[tuple[str, str]] = [
     ("tier2_application", "Tier 2 — Application"),
     ("tier3_architecture", "Tier 3 — Architecture"),
 ]
-
-
-def _sanitize_filename(course_name: str) -> str:
-    """Convert a course name into a safe filesystem name."""
-    return (
-        course_name.strip()
-        .replace(" ", "_")
-        .replace("/", "-")
-        .replace("\\", "-")
-        .replace(":", "")
-        .replace("*", "")
-        .replace("?", "")
-        .replace('"', "")
-        .replace("<", "")
-        .replace(">", "")
-        .replace("|", "")
-    )
 
 
 def _create_lab_scaffolding(labs_base_path: Path) -> Path:
@@ -165,7 +149,7 @@ class CrewResult:
 # ---------------------------------------------------------------------------
 
 
-def _generate_run_id(course_safe_name: str) -> str:
+def generate_run_id(course_safe_name: str) -> str:
     """Generate a unique, human-readable run identifier.
 
     Format: ``YYYY-MM-DD_HHMMSS_<course_safe_name>``
@@ -399,7 +383,7 @@ def run_syllabus_crew(
 
         # When resuming, we still create a fresh run directory for the
         # labs output (so each resume produces its own timestamped output).
-        _active_run_id = _generate_run_id(safe_name)
+        _active_run_id = generate_run_id(safe_name)
         run_dir = OUTPUT_ROOT / _active_run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -453,7 +437,7 @@ def run_syllabus_crew(
             # exist at this point.
             _active_run_id = run_id
         else:
-            _active_run_id = _generate_run_id(safe_name)
+            _active_run_id = generate_run_id(safe_name)
         run_dir = OUTPUT_ROOT / _active_run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 

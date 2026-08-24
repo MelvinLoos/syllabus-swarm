@@ -176,8 +176,6 @@ _CODE_EXTENSIONS: frozenset[str] = frozenset(
         ".ini",
         ".env",
         ".gitignore",
-        ".dockerfile",
-        ".makefile",
     }
 )
 
@@ -456,54 +454,6 @@ def write_rubric(
     return write_file(path, content, force=force)
 
 
-def write_lab_file(
-    course_name: str,
-    tier: str,
-    subfolder: str,
-    filename: str,
-    content: Any,
-    *,
-    force: bool = False,
-) -> Path:
-    """Write a single lab file into the tiered directory structure.
-
-    The target path is:
-    ``output/labs/<course>/<tier>/<subfolder>/<filename>``
-
-    Parameters
-    ----------
-    course_name : str
-        Human-readable course title.
-    tier : str
-        Tier directory name (e.g. ``"tier1_foundations"``).
-    subfolder : str
-        Either ``"starter"`` or ``"solution"``.
-    filename : str
-        The filename (e.g. ``"lab1.py"``, ``"README.md"``).
-    content : Any
-        File contents.  Coerced via ``str()``.
-    force : bool
-        Passed through to ``write_file``.
-
-    Returns
-    -------
-    Path
-        Absolute path to the written file.
-
-    Raises
-    ------
-    ValueError
-        If *subfolder* is not ``"starter"`` or ``"solution"``.
-    """
-    if subfolder not in ("starter", "solution"):
-        raise ValueError(f"subfolder must be 'starter' or 'solution', got '{subfolder}'.")
-
-    safe_course = _sanitize_filename(course_name)
-    safe_filename = _sanitize_filename(str(Path(filename).name), replace_spaces=False)
-    path = OUTPUT_PATHS.labs_dir / safe_course / tier / subfolder / safe_filename
-    return write_file(path, content, force=force)
-
-
 # ---------------------------------------------------------------------------
 # Self-test
 # ---------------------------------------------------------------------------
@@ -588,12 +538,6 @@ if __name__ == "__main__":
         rub = fw.write_rubric("Test Course 101", "# Test Rubric")
         print(f"   [OK]  rubric   -> {rub}")
         assert rub.exists()
-
-        lab = fw.write_lab_file(
-            "Test Course 101", "tier1_foundations", "starter", "lab1.py", "# TODO\n"
-        )
-        print(f"   [OK]  lab file -> {lab}")
-        assert lab.exists()
 
         # 7. Edge case: empty content warning
         print("\n7. Empty content warning:")
