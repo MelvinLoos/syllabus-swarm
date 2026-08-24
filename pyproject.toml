@@ -1,3 +1,9 @@
+[project]
+name = "syllabus-swarm"
+version = "0.1.0"
+description = "Multi-agent curriculum generator for Dutch MBO4 vocational education"
+requires-python = ">=3.12"
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
