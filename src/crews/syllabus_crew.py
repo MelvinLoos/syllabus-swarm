@@ -21,6 +21,7 @@ output as grounding context.
 
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 from datetime import UTC, datetime
@@ -61,6 +62,178 @@ _TIERS: list[tuple[str, str]] = [
     ("tier2_application", "Tier 2 — Application"),
     ("tier3_architecture", "Tier 3 — Architecture"),
 ]
+
+# Known pattern emitted by CrewAI when an agent hits its ``max_iter``
+# ceiling.  We scan exception messages for this substring so we can
+# surface a clear, actionable hint (which env var to bump) instead of
+# forcing the operator to decode three separate error lines.
+_MAX_ITER_CREWAI_MARKER: str = "Maximum iterations reached"
+
+# Patterns used by :func:`_scan_for_stray_generated_files` to detect
+# agent-generated files that escaped the ``output/`` directory.
+_STRAY_PATTERNS: list[tuple[str, str]] = [
+    (r"^tier\d", "directory"),
+    (r"^tier\d.*", "directory"),
+    (r"\.js$", "file"),
+    (r"^package\.json$", "file"),
+    (r"^Makefile$", "file"),
+    (r"^Dockerfile$", "file"),
+    (r"^docker-compose\.yml$", "file"),
+    (r"^docker-compose\.yaml$", "file"),
+    (r"^\.gitignore$", "file"),
+    (r"\.html$", "file"),
+    (r"\.css$", "file"),
+    (r"\.sh$", "file"),
+    (r"\.yml$", "file"),
+    (r"\.md$", "file"),
+]
+# Directories that are permanently at the project root and should never
+# be flagged as strays.
+_STRAY_SAFE_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".roo",
+        ".ruler",
+        ".venv",
+        "__pycache__",
+        "config",
+        "output",
+        "src",
+        "tests",
+    }
+)
+
+
+def _annotate_iter_exhaustion(
+    raw_error: str,
+    agent_role_env_key: str,
+    *,
+    parent_error: BaseException | None = None,
+) -> str:
+    """If *raw_error* signals iteration exhaustion, append a hint.
+
+    CrewAI emits ``"Maximum iterations reached"`` (or wraps it in an
+    ``Invalid response`` chain) when an agent consumes all of its
+    ``max_iter`` budget.  This function detects that marker and appends
+    a human-readable suggestion pinned to the appropriate env var::
+
+        AGENT_{agent_role_env_key}_MAX_ITER
+
+    Parameters
+    ----------
+    raw_error : str
+        The original error message text.
+    agent_role_env_key : str
+        Uppercase role constant used in env-var names
+        (e.g. ``"QA_REVIEWER"``).
+    parent_error : BaseException or None
+        When available, its class name is included in the hint so the
+        operator can distinguish a timeout from a max-iter ceiling.
+
+    Returns
+    -------
+    str
+        *raw_error* unchanged if no exhaustion marker is found; otherwise
+        *raw_error* plus a newline-separated hint.
+    """
+    if _MAX_ITER_CREWAI_MARKER not in raw_error:
+        return raw_error
+
+    env_var = f"AGENT_{agent_role_env_key}_MAX_ITER"
+
+    parts: list[str] = [
+        raw_error,
+        "",
+        "─" * 60,
+        "⚠️  ITERATION LIMIT EXHAUSTION DETECTED",
+        "",
+        "   The agent exceeded its max_iter budget.  CrewAI emitted:",
+        f"   \"{_MAX_ITER_CREWAI_MARKER}\"",
+        "",
+        "   👉  Increase the limit by setting this in your .env file:",
+        f"       {env_var}=<higher_value>",
+    ]
+
+    if parent_error is not None:
+        parts.append(f"   (Wrapped exception: {type(parent_error).__name__})")
+
+    return "\n".join(parts)
+
+
+def _scan_for_stray_generated_files(
+    *,
+    run_id: str,
+    verbose: bool = False,
+) -> list[str]:
+    """Detect agent-generated files that escaped the ``output/`` tree.
+
+    LLM agents can sometimes write files (via the low-level ``write-file``
+    command) to the project root instead of under ``output/<run_id>/``.
+    This scanner checks for common generated-file patterns at the project
+    root and returns a list of warnings.
+
+    Parameters
+    ----------
+    run_id : str
+        The per-run identifier used for this pipeline execution.
+    verbose : bool
+        When ``True``, prints the warnings to stderr immediately.
+
+    Returns
+    -------
+    list[str]
+        Human-readable warning strings (one per stray).  Empty if clean.
+    """
+    warnings_list: list[str] = []
+    root = _PROJECT_ROOT
+
+    for entry in sorted(root.iterdir()):
+        name = entry.name
+
+        # Skip known project directories and dot-files that are not generated.
+        if entry.is_dir() and name in _STRAY_SAFE_DIRS:
+            continue
+        # Skip hidden files/dirs that aren't in our pattern list.
+        if name.startswith(".") and entry.is_dir():
+            continue
+
+        matched = False
+        for pattern, kind in _STRAY_PATTERNS:
+            if re.search(pattern, name):
+                matched = True
+                msg = (
+                    f"⚠️  Stray generated {kind} detected: {entry}\n"
+                    f"   This file was likely written by an agent directly to the\n"
+                    f"   project root instead of under output/{run_id}/\n"
+                    f"   To clean up:  git clean -fd {name}\n"
+                    f"   To prevent recurrence: ensure all agents use the\n"
+                    f"   'write-labs' command with 'run_id' instead of 'write-file'."
+                )
+                warnings_list.append(msg)
+                if verbose:
+                    print(msg, file=sys.stderr)
+                break
+
+        if not matched and entry.is_dir():
+            # Recurse one level for nested structures like tier2_application/user_data_cli/
+            for sub in sorted(entry.iterdir()):
+                for pattern, kind in _STRAY_PATTERNS:
+                    if re.search(pattern, sub.name):
+                        msg = (
+                            f"⚠️  Stray generated {kind} detected: {sub}\n"
+                            f"   Nested inside stray directory: {entry}\n"
+                            f"   To clean up:  git clean -fd {name}/\n"
+                            f"   To prevent recurrence: ensure all agents use the\n"
+                            f"   'write-labs' command with 'run_id' instead of 'write-file'."
+                        )
+                        warnings_list.append(msg)
+                        if verbose:
+                            print(msg, file=sys.stderr)
+                        break
+
+    return warnings_list
 
 
 def _create_lab_scaffolding(labs_base_path: Path) -> Path:
@@ -483,7 +656,9 @@ def run_syllabus_crew(
             syllabus_ok = True
 
         except Exception as exc:
-            syllabus_error = str(exc)
+            syllabus_error = _annotate_iter_exhaustion(
+                str(exc), "CURRICULUM_ARCHITECT", parent_error=exc
+            )
             write_file(
                 syllabus_path,
                 f"# {course_name} — Syllabus Generation Failed\n\n**Error:** {syllabus_error}\n",
@@ -529,7 +704,9 @@ def run_syllabus_crew(
                 syllabus_review_error = "Education Director produced no output."
 
         except Exception as exc:
-            syllabus_review_error = str(exc)
+            syllabus_review_error = _annotate_iter_exhaustion(
+                str(exc), "EDUCATION_DIRECTOR", parent_error=exc
+            )
             if verbose:
                 print(f"  ❌  Syllabus Feasibility Audit failed: {exc}", file=sys.stderr)
     else:
@@ -626,7 +803,7 @@ def run_syllabus_crew(
                         print(f"  ❌  {theory_error}", file=sys.stderr)
 
         except Exception as exc:
-            theory_error = str(exc)
+            theory_error = _annotate_iter_exhaustion(str(exc), "THEORY_INSTRUCTOR", parent_error=exc)
             if verbose:
                 print(f"  ❌  Theory generation failed: {exc}", file=sys.stderr)
     else:
@@ -788,14 +965,27 @@ def run_syllabus_crew(
                 if verbose:
                     print("  ✅  QA Review completed.")
             else:
-                qa_error = "QA Reviewer produced no output."
+                qa_error = _annotate_iter_exhaustion(
+                    "QA Reviewer produced no output.",
+                    "QA_REVIEWER",
+                    parent_error=None,
+                )
 
         except Exception as exc:
-            qa_error = str(exc)
+            qa_error = _annotate_iter_exhaustion(
+                str(exc),
+                "QA_REVIEWER",
+                parent_error=exc,
+            )
             if verbose:
                 print(f"  ❌  QA Review failed: {exc}", file=sys.stderr)
 
-    # ── 5. Generate output manifest ────────────────────────────────────
+    # ── 5. Post-run sanity: scan for stray generated files ─────────────
+    strays = _scan_for_stray_generated_files(run_id=run_id, verbose=verbose)
+    if strays and verbose:
+        print(f"\n  🔍  Stray file scan: {len(strays)} issue(s) found above.", file=sys.stderr)
+
+    # ── 6. Generate output manifest ────────────────────────────────────
     try:
         manifest_path = update_output_manifest(
             course_name,
@@ -807,7 +997,7 @@ def run_syllabus_crew(
             print(f"  [Warning] Manifest generation failed: {exc}", file=sys.stderr)
         manifest_path = None
 
-    # ── 6. Return combined result ──────────────────────────────────────
+    # ── 7. Return combined result ──────────────────────────────────────
     return CrewResult(
         syllabus_path=syllabus_path,
         labs_base_path=labs_base_path,
