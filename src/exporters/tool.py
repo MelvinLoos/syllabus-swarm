@@ -59,7 +59,6 @@ from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from src.exporters.file_writer import (
-    OUTPUT_PATHS,
     FileWriteError,
     write_directory_tree,
     write_file,
@@ -110,8 +109,7 @@ class OutputExportToolArgs(BaseModel):
         ...,
         description=(
             "The operation to perform. One of: write-syllabus, write-labs, "
-            "generate-manifest, export-course-graph, write-file, "
-            "write-directory-tree."
+            "generate-manifest, export-course-graph."
         ),
     )
     course_name: str = Field(default="", description="Human-facing course name.")
@@ -193,8 +191,7 @@ class OutputExportTool(BaseTool):
         "Writes syllabus, labs, and manifest files to the output/ directory "
         "tree.  Call it with a required 'command' keyword argument plus "
         "command-specific keyword arguments.  Supported commands: "
-        "write-syllabus, write-labs, generate-manifest, export-course-graph, "
-        "write-file, write-directory-tree.  "
+        "write-syllabus, write-labs, generate-manifest, export-course-graph.  "
         "Example: command='write-syllabus', course_name='ML 101', "
         "content='# Syllabus\\n...'"
     )
@@ -202,6 +199,49 @@ class OutputExportTool(BaseTool):
     args_schema: type[BaseModel] = OutputExportToolArgs
 
     force: bool = False
+
+    # ------------------------------------------------------------------
+    # Path safety guard — ensures no file is written outside output/
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _guard_output_root(target: str | Path) -> Path:
+        """Resolve *target* and reject paths outside the ``output/`` tree.
+
+        The low-level ``write-file`` and ``write-directory-tree`` commands
+        are intentionally hidden from the LLM, but as an additional safety
+        net this guard will block any write that would land outside the
+        project's ``output/`` directory — whether invoked by an LLM that
+        somehow discovered the hidden commands, or by the CLI.
+
+        Parameters
+        ----------
+        target : str or Path
+            A relative or absolute path.
+
+        Returns
+        -------
+        Path
+            The fully-resolved, validated absolute path.
+
+        Raises
+        ------
+        ValueError
+            If the resolved path is not under ``output/``.
+        """
+        resolved = (Path(target) if Path(target).is_absolute() else _PROJECT_ROOT / target).resolve()
+        output_root = (_PROJECT_ROOT / "output").resolve()
+        try:
+            resolved.relative_to(output_root)
+        except ValueError:
+            raise ValueError(
+                f"Path '{target}' resolves to '{resolved}', which is outside "
+                f"the output/ directory.  All file writes must target "
+                f"output/ or a subdirectory.  Use the 'write-labs' command "
+                f"with 'run_id' and 'tier' instead of 'write-file' or "
+                f"'write-directory-tree'."
+            ) from None
+        return resolved
 
     # ------------------------------------------------------------------
     # CrewAI entry point
@@ -215,8 +255,7 @@ class OutputExportTool(BaseTool):
             "argument, e.g. command='write-labs', course_name='...', "
             "tier='tier1_foundations', run_id='...', files={...}.  "
             "Supported commands: write-syllabus, write-labs, "
-            "generate-manifest, export-course-graph, write-file, "
-            "write-directory-tree."
+            "generate-manifest, export-course-graph."
         )
 
     def _run(self, **kwargs: Any) -> str:
@@ -269,7 +308,7 @@ class OutputExportTool(BaseTool):
                 return _err(
                     f"Unknown command: '{command}'.  Supported commands: "
                     "write-syllabus, write-labs, generate-manifest, "
-                    "export-course-graph, write-file, write-directory-tree."
+                    "export-course-graph."
                 )
         except FileWriteError as exc:
             return _err(str(exc))
@@ -305,13 +344,9 @@ class OutputExportTool(BaseTool):
     def _handle_write_labs(self, params: dict[str, Any]) -> str:
         """Write a batch of lab files from a files-dict mapping.
 
-        Files are written to one of two locations depending on whether
-        a ``run_id`` is provided:
-
-        * **With run_id**: ``output/<run_id>/labs/<tier>/``
-          (per-run isolation, the default for pipeline runs).
-        * **Without run_id**: ``output/labs/<tier>/``
-          (shared global path, used by the CLI or standalone tool calls).
+        Files are written to ``output/<run_id>/labs/<tier>/``
+        (per-run isolation).  The ``run_id`` parameter is **required**
+        — without it there is no per-run directory and the call is rejected.
 
         The ``course_name`` is sanitised into a safe directory name.
         """
@@ -321,6 +356,13 @@ class OutputExportTool(BaseTool):
 
         tier = str(params.get("tier", "tier1_foundations"))
         run_id = str(params.get("run_id", "") or "")
+        if not run_id:
+            return _err(
+                "Missing required parameter: 'run_id'.  "
+                "The 'write-labs' command requires a run_id to place files "
+                "in the correct per-run output directory "
+                "(e.g. run_id='2026-09-02_163321_Immersive_Design')."
+            )
 
         files_raw = params.get("files")
         if not files_raw:
@@ -348,10 +390,7 @@ class OutputExportTool(BaseTool):
 
         files_dict: dict[str, Any] = files_raw
 
-        if run_id:
-            base = _PROJECT_ROOT / "output" / run_id / "labs" / tier
-        else:
-            base = OUTPUT_PATHS.labs_dir / tier
+        base = _PROJECT_ROOT / "output" / run_id / "labs" / tier
 
         written = write_directory_tree(base, files_dict, force=self.force)
         return _ok(
@@ -435,7 +474,11 @@ class OutputExportTool(BaseTool):
         return _ok(f"Course graph exported for '{course_name}'.", path)
 
     def _handle_write_file(self, params: dict[str, Any]) -> str:
-        """Low-level: write arbitrary content to a single file."""
+        """Low-level: write arbitrary content to a single file (CLI-only).
+
+        The LLM is not shown this command.  For extra safety, writes are
+        only permitted inside ``output/`` — any path outside it is rejected.
+        """
         file_path = str(params.get("path", ""))
         if not file_path:
             return _err("Missing required parameter: 'path'.")
@@ -443,6 +486,12 @@ class OutputExportTool(BaseTool):
         content = params.get("content", "")
         if not content:
             return _err("Missing required parameter: 'content'.")
+
+        # Resolve and validate the path is under output/
+        try:
+            safe_path = self._guard_output_root(file_path)
+        except ValueError as exc:
+            return _err(str(exc))
 
         # Auto-parse JSON strings — CrewAI agents often pass content
         # as a JSON-encoded string rather than a native string.
@@ -454,14 +503,24 @@ class OutputExportTool(BaseTool):
             except (json.JSONDecodeError, TypeError):
                 pass  # Not JSON; use the raw string as-is.
 
-        path = write_file(file_path, content, force=self.force)
+        path = write_file(safe_path, content, force=self.force)
         return _ok("File written.", path)
 
     def _handle_write_directory_tree(self, params: dict[str, Any]) -> str:
-        """Low-level: write a batch of files from a directory-tree mapping."""
+        """Low-level: write a batch of files from a directory-tree mapping (CLI-only).
+
+        The LLM is not shown this command.  For extra safety, writes are
+        only permitted inside ``output/`` — any base_path outside it is rejected.
+        """
         base_path = str(params.get("base_path", ""))
         if not base_path:
             return _err("Missing required parameter: 'base_path'.")
+
+        # Resolve and validate the base_path is under output/
+        try:
+            safe_base = self._guard_output_root(base_path)
+        except ValueError as exc:
+            return _err(str(exc))
 
         files_raw = params.get("files")
         if not files_raw:
@@ -488,10 +547,10 @@ class OutputExportTool(BaseTool):
             )
 
         files_dict: dict[str, Any] = files_raw
-        written = write_directory_tree(base_path, files_dict, force=self.force)
+        written = write_directory_tree(safe_base, files_dict, force=self.force)
         return _ok(
-            f"Wrote {len(written)} file(s) to '{base_path}'.",
-            str(written[0]) if written else base_path,
+            f"Wrote {len(written)} file(s) to '{safe_base}'.",
+            str(written[0]) if written else safe_base,
         )
 
 
