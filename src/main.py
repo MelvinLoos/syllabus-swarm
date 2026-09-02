@@ -825,6 +825,27 @@ def _run_intake(
 # ---------------------------------------------------------------------------
 
 
+def _maybe_print_iter_hint(error_text: str) -> None:
+    """If *error_text* contains an iteration-exhaustion marker, print a
+    compact hint telling the operator which env var to tweak.
+
+    The heavy lifting (full annotated message) is done in
+    :func:`src.crews.syllabus_crew._annotate_iter_exhaustion`.  This
+    function provides a quick, non-intrusive reminder at the end of the
+    results summary.
+    """
+    if "Maximum iterations reached" not in error_text:
+        return
+
+    # Extract the env-var name if present (inserted by _annotate_iter_exhaustion).
+    import re
+
+    match = re.search(r"AGENT_(\w+)_MAX_ITER", error_text)
+    if match:
+        agent = match.group(1)
+        print(f"      💡  Try: export AGENT_{agent}_MAX_ITER=<higher_value>")
+
+
 def _print_summary(result: CrewResult, course_name: str) -> None:
     """Print a clear success/failure summary for both agents."""
     print(f"\n{'=' * 60}")
@@ -846,6 +867,7 @@ def _print_summary(result: CrewResult, course_name: str) -> None:
         print("  ❌  Curriculum Architect  —  FAILED")
         if result.syllabus_error:
             print(f"      ↳ {result.syllabus_error}")
+            _maybe_print_iter_hint(result.syllabus_error)
 
     # ── Labs Agent ──────────────────────────
     if result.labs_ok:
@@ -856,6 +878,19 @@ def _print_summary(result: CrewResult, course_name: str) -> None:
         print("  ❌  Lab & Project Developer  —  FAILED")
         if result.labs_error:
             print(f"      ↳ {result.labs_error}")
+            _maybe_print_iter_hint(result.labs_error)
+
+    # ── QA Reviewer ─────────────────────────
+    if not result.qa_ok and result.qa_error:
+        print("  ⚠️  QA Reviewer  —  ISSUE")
+        print(f"      ↳ {result.qa_error}")
+        _maybe_print_iter_hint(result.qa_error)
+
+    # ── Theory Instructor ───────────────────
+    if not result.theory_ok and result.theory_error:
+        print("  ❌  Theory Instructor  —  FAILED")
+        print(f"      ↳ {result.theory_error}")
+        _maybe_print_iter_hint(result.theory_error)
 
     # ── Manifest ────────────────────────────
     print()
