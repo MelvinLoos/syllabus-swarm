@@ -22,7 +22,6 @@ output as grounding context.
 from __future__ import annotations
 
 import re
-import shutil
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,6 +42,7 @@ from src.exporters.theory_validator import (
     format_validation_report,
     validate_theory_directory,
 )
+from src.models import GenerationState, TierState
 from src.tasks.lab_generation import create_lab_generation_task
 from src.tasks.qa_review import create_qa_review_task
 from src.tasks.syllabus_generation import create_syllabus_generation_task
@@ -359,6 +359,133 @@ def _find_syllabus_in_dir(resume_dir: Path) -> Path:
     return md_files[0]
 
 
+# ===========================================================================
+# Generation State Management — resume/restart progress tracking
+# ===========================================================================
+
+_STATE_FILE_NAME: str = "_generation_state.json"
+
+
+def load_generation_state(run_dir: Path) -> GenerationState | None:
+    """Load the generation progress state from a run directory.
+
+    If ``_generation_state.json`` exists, deserialises it.  Otherwise,
+    auto-generates a state by scanning the filesystem for existing lab
+    and theory files (backward-compatible with pre-state-file runs).
+
+    Parameters
+    ----------
+    run_dir : Path
+        The run output directory (e.g. ``output/2026-09-02_191946_MyCourse/``).
+
+    Returns
+    -------
+    GenerationState or None
+        The loaded or auto-generated state, or ``None`` if the run
+        directory does not exist at all.
+    """
+    if not run_dir.exists():
+        return None
+
+    state_path = run_dir / _STATE_FILE_NAME
+    course_name = run_dir.name.split("_", 2)[-1] if len(run_dir.name.split("_", 2)) >= 3 else run_dir.name
+
+    if state_path.exists():
+        try:
+            return GenerationState.model_validate_json(state_path.read_text(encoding="utf-8"))
+        except Exception:
+            # Corrupt state file — fall back to auto-detection.
+            pass
+
+    # ── Auto-generate from filesystem (backward compat) ──────────────
+    labs_path = run_dir / "labs"
+    state = GenerationState(run_id=run_dir.name, course_name=course_name)
+
+    for tier_dir_name, _label in _TIERS:
+        tier_labs_path = labs_path / tier_dir_name
+
+        # Lab files check
+        if _is_tier_labs_complete(tier_labs_path):
+            state.tiers[tier_dir_name] = TierState(
+                status="complete",
+                files=_count_lab_files(tier_labs_path),
+            )
+        else:
+            state.tiers[tier_dir_name] = TierState(status="incomplete")
+
+        # Theory files check
+        state.theory[tier_dir_name] = (
+            "complete" if _is_tier_theory_complete(tier_labs_path) else "incomplete"
+        )
+
+    return state
+
+
+def save_generation_state(run_dir: Path, state: GenerationState) -> None:
+    """Persist the generation state to disk atomically.
+
+    Writes to a temp file first, then renames to avoid corruption on
+    partial writes.
+    """
+    state_path = run_dir / _STATE_FILE_NAME
+    tmp_path = state_path.with_suffix(state_path.suffix + ".tmp")
+    tmp_path.write_text(state.model_dump_json(indent=2), encoding="utf-8")
+    tmp_path.rename(state_path)
+
+
+def _is_tier_labs_complete(tier_labs_path: Path) -> bool:
+    """Check whether a tier has real lab files (not just .gitkeep).
+
+    Returns ``True`` when both ``starter/`` and ``solution/`` contain
+    at least one file that is not a hidden/dot file.
+    """
+    for subdir in ("starter", "solution"):
+        sub_path = tier_labs_path / subdir
+        if not sub_path.exists():
+            return False
+        real_files = [
+            f for f in sub_path.iterdir()
+            if f.is_file() and not f.name.startswith(".")
+        ]
+        if not real_files:
+            return False
+    return True
+
+
+def _is_tier_theory_complete(tier_labs_path: Path) -> bool:
+    """Check whether a tier has theory artifacts.
+
+    Returns ``True`` when ``theory/`` exists and contains at least one
+    non-hidden file.
+    """
+    theory_path = tier_labs_path / "theory"
+    if not theory_path.exists():
+        return False
+    real_files = [
+        f for f in theory_path.iterdir()
+        if f.is_file() and not f.name.startswith(".")
+    ]
+    return bool(real_files)
+
+
+def _count_lab_files(tier_labs_path: Path) -> int:
+    """Count non-hidden lab files across starter/ and solution/.
+
+    Returns the total number of real (non-``.gitkeep``, non-hidden)
+    files found in the tier's lab directories.
+    """
+    count = 0
+    for subdir in ("starter", "solution"):
+        sub_path = tier_labs_path / subdir
+        if not sub_path.exists():
+            continue
+        count += sum(
+            1 for f in sub_path.iterdir()
+            if f.is_file() and not f.name.startswith(".")
+        )
+    return count
+
+
 def _build_top_level_lab_readme(
     course_name: str,
     primary_language: str,
@@ -533,7 +660,11 @@ def run_syllabus_crew(
     _active_run_id: str  # Always populated below — used for lab task context.
 
     if resume_dir is not None:
+        # ── In-place resume: reuse the SAME run_id and directory ────
         resume_path = Path(resume_dir)
+        _active_run_id = resume_path.name
+        run_dir = resume_path
+
         try:
             syllabus_path = _find_syllabus_in_dir(resume_path)
             syllabus_raw = syllabus_path.read_text(encoding="utf-8").strip()
@@ -548,59 +679,28 @@ def run_syllabus_crew(
 
         except Exception as exc:
             syllabus_error = str(exc)
-            # Create a fallback path so the rest of the function has
-            # something to work with.
-            syllabus_path = OUTPUT_ROOT / "resume_failed" / f"{safe_name}.md"
+            syllabus_path = run_dir / "resume_failed" / f"{safe_name}.md"
             if verbose:
-                print(f"  ❌  Failed to load syllabus from resume dir: {exc}", file=sys.stderr)
+                print(
+                    f"  ❌  Failed to load syllabus from resume dir: {exc}",
+                    file=sys.stderr,
+                )
 
-        # When resuming, we still create a fresh run directory for the
-        # labs output (so each resume produces its own timestamped output).
-        _active_run_id = generate_run_id(safe_name)
-        run_dir = OUTPUT_ROOT / _active_run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
+        # Use the existing labs directory (files are already in place).
+        labs_base_path = resume_path / "labs"
+        labs_base_path.mkdir(parents=True, exist_ok=True)
 
-        # ── Copy existing content from the resume directory ────────────
-        # Copy the syllabus into the new run directory so the output is
-        # self-contained.
-        new_syllabus_dir = run_dir / "syllabus"
-        new_syllabus_dir.mkdir(parents=True, exist_ok=True)
-        new_syllabus_path = new_syllabus_dir / syllabus_path.name
-        if not new_syllabus_path.exists():
-            shutil.copy2(syllabus_path, new_syllabus_path)
-            if verbose:
-                print(f"  📄  Copied syllabus to: {new_syllabus_path}")
-        # Update syllabus_path to point at the copy in the new run dir.
-        syllabus_path = new_syllabus_path
+        if verbose:
+            print(f"  📁  Resuming in-place from: {resume_path}")
 
-        # Copy any existing lab files from the resume directory so
-        # previously-completed tiers are preserved in the new run.
-        resume_labs_dir = resume_path / "labs"
-        if resume_labs_dir.exists():
-            labs_dir = run_dir / "labs"
-            labs_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(
-                resume_labs_dir,
-                labs_dir,
-                dirs_exist_ok=True,
-            )
-            if verbose:
-                print(f"  📁  Copied existing labs from: {resume_labs_dir}")
-
-        # Copy root-level metadata files (intake_session.json,
-        # course_graph.json, manifest.json, etc.) so the new run
-        # directory is fully self-contained.
-        for item in resume_path.iterdir():
-            if item.is_file():
-                dest = run_dir / item.name
-                if not dest.exists():
-                    shutil.copy2(item, dest)
-                    if verbose:
-                        print(f"  📋  Copied {item.name} to: {dest}")
-
-        labs_dir = run_dir / "labs"
-        labs_dir.mkdir(parents=True, exist_ok=True)
-        labs_base_path = labs_dir
+        # ── In resume mode, create an architect agent so the
+        # syllabus review delegation pool has access to it.
+        # The architect's LLM is instantiated here but only used
+        # if the Education Director delegates back to it.
+        if architect_agent is None:
+            architect: Agent = get_architect(verbose=verbose)
+        else:
+            architect = architect_agent
 
     else:
         # ── Fresh run: create new run directory ────────────────────────
@@ -712,100 +812,118 @@ def run_syllabus_crew(
     else:
         syllabus_review_error = "Skipped — Curriculum Architect produced no syllabus to audit."
 
-    # ── 2. Theory Instructor ───────────────────────────────────────────
+    # ── 2. Theory Instructor (per-tier, with resume detection) ──────────
     theory_ok = False
     theory_error: str | None = None
     theory_instructor: Agent | None = None
+    all_theory_tiers_ok = True
 
     if skip_theory:
         theory_ok = True
     elif syllabus_raw:
-        try:
-            theory_instructor = get_theory_instructor(verbose=verbose)
-            theory_task = create_theory_task(
-                agent=theory_instructor,
-                course_name=course_name,
-                syllabus_context=syllabus_raw,
-                run_id=_active_run_id,
-                verbose=verbose,
-            )
+        # ── Load generation state for resume detection ────────────────
+        state = load_generation_state(run_dir)
 
-            theory_crew = Crew(
-                agents=[theory_instructor],
-                tasks=[theory_task],
-                process=Process.sequential,
-                verbose=verbose,
-            )
-            theory_result = theory_crew.kickoff()
-            theory_raw = (
-                theory_result.raw if hasattr(theory_result, "raw") else str(theory_result)
-            ).strip()
+        for tier_dir_name, tier_label in _TIERS:
+            # ── Skip completed theory ──────────────────────────────────
+            if state:
+                tier_theory_status = state.theory.get(tier_dir_name)
+                if tier_theory_status == "complete":
+                    if verbose:
+                        print(
+                            f"  ⏭️  Theory for {tier_dir_name}: already complete, skipping."
+                        )
+                    continue
 
-            if not theory_raw:
-                theory_error = "Theory Instructor produced no output."
-            else:
+            # Also check filesystem (backward compat / first resume)
+            tier_labs_path = labs_base_path / tier_dir_name
+            if _is_tier_theory_complete(tier_labs_path):
+                if state:
+                    state.theory[tier_dir_name] = "complete"
+                    save_generation_state(run_dir, state)
                 if verbose:
-                    print("  ✅  Theory artifacts generated successfully.")
+                    print(
+                        f"  ⏭️  Theory for {tier_dir_name}: already complete, skipping."
+                    )
+                continue
 
-                # ── 2.1. Validate theory files ─────────────────────────
-                # Run deterministic syntax/structure checks on every
-                # generated theory file.  This catches issues like
-                # JavaScript syntax errors, missing null checks, scripts
-                # in <head>, unclosed Mermaid fences, and missing bash
-                # shebangs BEFORE a student opens the file.
-                all_theory_valid = True
-                validation_reports: list[str] = []
+            # ── Generate theory for this tier ─────────────────────────
+            try:
+                if theory_instructor is None:
+                    theory_instructor = get_theory_instructor(verbose=verbose)
 
-                for tier_dir_name, _tier_label in _TIERS:
-                    theory_dir = labs_base_path / tier_dir_name / "theory"
-                    if not theory_dir.exists():
-                        continue
+                tier_theory_task = create_theory_task(
+                    agent=theory_instructor,
+                    course_name=course_name,
+                    syllabus_context=syllabus_raw,
+                    run_id=_active_run_id,
+                    tier=tier_dir_name,
+                    verbose=verbose,
+                )
 
+                tier_theory_crew = Crew(
+                    agents=[theory_instructor],
+                    tasks=[tier_theory_task],
+                    process=Process.sequential,
+                    verbose=verbose,
+                )
+                tier_theory_crew.kickoff()
+
+                # ── Validate the generated theory file ────────────────
+                theory_dir = tier_labs_path / "theory"
+                if theory_dir.exists():
                     tier_results = validate_theory_directory(theory_dir)
                     if tier_results:
                         report = format_validation_report(tier_results)
-                        validation_reports.append(f"### {tier_dir_name}\n\n{report}")
+                        report_dir = run_dir / "theory"
+                        report_dir.mkdir(parents=True, exist_ok=True)
+                        report_path = report_dir / f"VALIDATION_REPORT_{tier_dir_name}.md"
+                        report_path.write_text(report, encoding="utf-8")
 
-                        # Check if any file has errors (not just warnings)
-                        tier_has_errors = any(r.error_count > 0 for r in tier_results)
+                        tier_has_errors = any(
+                            r.error_count > 0 for r in tier_results
+                        )
                         if tier_has_errors:
-                            all_theory_valid = False
+                            all_theory_tiers_ok = False
                             if verbose:
                                 for r in tier_results:
                                     if r.error_count > 0:
                                         print(
-                                            f"  ❌  Theory validation: "
+                                            f"  ⚠️  Theory validation: "
                                             f"{r.file_path.name} has "
                                             f"{r.error_count} error(s)"
                                         )
+                            if state:
+                                state.theory[tier_dir_name] = "failed"
+                                save_generation_state(run_dir, state)
+                            continue
 
-                # Write the validation report alongside the theory files
-                # so developers can see what passed/failed.
-                if validation_reports:
-                    full_report = "# Theory File Validation Report\n\n" + "\n---\n\n".join(
-                        validation_reports
+                if state:
+                    state.theory[tier_dir_name] = "complete"
+                    save_generation_state(run_dir, state)
+                if verbose:
+                    print(f"  ✅  Theory for {tier_dir_name}: generated successfully.")
+
+            except Exception as exc:
+                all_theory_tiers_ok = False
+                if state:
+                    state.theory[tier_dir_name] = "failed"
+                    save_generation_state(run_dir, state)
+                exc_msg = _annotate_iter_exhaustion(
+                    str(exc), "THEORY_INSTRUCTOR", parent_error=exc
+                )
+                if verbose:
+                    print(
+                        f"  ❌  Theory for {tier_dir_name} failed: {exc_msg}",
+                        file=sys.stderr,
                     )
-                    report_path = run_dir / "theory" / "VALIDATION_REPORT.md"
-                    report_path.parent.mkdir(parents=True, exist_ok=True)
-                    write_file(report_path, full_report, force=True)
 
-                if all_theory_valid:
-                    theory_ok = True
-                    if verbose:
-                        print("  ✅  All theory files passed validation.")
-                else:
-                    theory_error = (
-                        "One or more theory files failed post-generation "
-                        "validation.  See VALIDATION_REPORT.md in the "
-                        "theory/ directory for details."
-                    )
-                    if verbose:
-                        print(f"  ❌  {theory_error}", file=sys.stderr)
+        theory_ok = all_theory_tiers_ok
+        if not theory_ok:
+            theory_error = (
+                "One or more theory tiers failed. See logs above for details."
+            )
 
-        except Exception as exc:
-            theory_error = _annotate_iter_exhaustion(str(exc), "THEORY_INSTRUCTOR", parent_error=exc)
-            if verbose:
-                print(f"  ❌  Theory generation failed: {exc}", file=sys.stderr)
     else:
         theory_error = "Skipped — Curriculum Architect produced no syllabus to use as context."
 
@@ -892,12 +1010,53 @@ def run_syllabus_crew(
                 "tier3_architecture",
             ]
             all_tier_ok = True
+            # ── Load state for resume detection ────────────────────────
+            lab_state = load_generation_state(run_dir)
+
             # Sequential execution avoids race conditions on the shared
             # Agent singleton (the LLM client and iteration tracker are
             # not thread-safe).
             for tier_name in tiers:
+                # ── Skip completed tiers ──────────────────────────────
+                if lab_state:
+                    tier_state = lab_state.tiers.get(tier_name)
+                    if tier_state and tier_state.status == "complete":
+                        if verbose:
+                            print(
+                                f"  ⏭️  {tier_name}: already complete "
+                                f"({tier_state.files} files), skipping."
+                            )
+                        continue
+
+                # Also check filesystem (backward compat)
+                tier_labs_path = labs_base_path / tier_name
+                if _is_tier_labs_complete(tier_labs_path):
+                    if lab_state:
+                        lab_state.tiers[tier_name] = TierState(
+                            status="complete",
+                            files=_count_lab_files(tier_labs_path),
+                        )
+                        save_generation_state(run_dir, lab_state)
+                    if verbose:
+                        print(
+                            f"  ⏭️  {tier_name}: already complete "
+                            f"(filesystem check), skipping."
+                        )
+                    continue
+
                 if not _generate_tier(tier_name):
                     all_tier_ok = False
+                    if lab_state:
+                        lab_state.tiers[tier_name] = TierState(
+                            status="failed",
+                        )
+                        save_generation_state(run_dir, lab_state)
+                elif lab_state:
+                    lab_state.tiers[tier_name] = TierState(
+                        status="complete",
+                        files=_count_lab_files(tier_labs_path),
+                    )
+                    save_generation_state(run_dir, lab_state)
 
             if all_tier_ok:
                 # Write a top-level index README.
@@ -964,6 +1123,22 @@ def run_syllabus_crew(
                 qa_ok = True
                 if verbose:
                     print("  ✅  QA Review completed.")
+
+                # ── Mark QA as complete in the state file.  Load
+                # the existing state file directly (NOT re-scanning the
+                # filesystem) to preserve tier statuses set by the
+                # pipeline — auto-detection would incorrectly mark
+                # QA-found broken files as "complete".
+                try:
+                    state_path = run_dir / _STATE_FILE_NAME
+                    if state_path.exists():
+                        existing = GenerationState.model_validate_json(
+                            state_path.read_text(encoding="utf-8")
+                        )
+                        existing.qa_review = "complete"
+                        save_generation_state(run_dir, existing)
+                except Exception:
+                    pass  # Non-critical — state file is best-effort
             else:
                 qa_error = _annotate_iter_exhaustion(
                     "QA Reviewer produced no output.",
