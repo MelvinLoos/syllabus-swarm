@@ -23,6 +23,8 @@ Public API
 * ``ModuleSummary`` — title, duration_weeks, topics.
 * ``CourseGraph`` — specification, course_slug, learning_objectives,
   key_concepts, prerequisites, modules, generated_at.
+* ``TierState`` — per-tier lab completion status for resume tracking.
+* ``GenerationState`` — full pipeline progress snapshot for --resume-from.
 """
 
 from __future__ import annotations
@@ -205,4 +207,60 @@ class CourseGraph(BaseModel):
             "%Y-%m-%dT%H:%M:%SZ"
         ),
         description="ISO 8601 UTC timestamp when the graph was generated.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# GenerationState — tracks resume/restart progress
+# ---------------------------------------------------------------------------
+
+
+class TierState(BaseModel):
+    """State of a single lab tier during generation.
+
+    Used by :class:`GenerationState` to track which tiers have been
+    successfully completed so the resume logic can skip them.
+    """
+
+    status: str = "incomplete"
+    """One of ``"complete"``, ``"incomplete"``, or ``"failed"``."""
+
+    files: int = 0
+    """Number of non-gitkeep files written for this tier."""
+
+    error: str | None = None
+    """Error message if the tier failed."""
+
+
+class GenerationState(BaseModel):
+    """Serialisable snapshot of the generation pipeline progress.
+
+    Written to ``_generation_state.json`` inside the run directory so
+    that a ``--resume-from`` invocation can skip already-completed
+    tiers and theory artifacts without re-running expensive LLM calls.
+
+    When the state file is missing (e.g. a run produced before this
+    feature existed), the resume logic auto-generates one by scanning
+    the filesystem for existing output.
+    """
+
+    run_id: str = Field(description="The run identifier this state belongs to.")
+    course_name: str = Field(description="Human-readable course name.")
+    tiers: dict[str, TierState] = Field(
+        default_factory=dict,
+        description="Per-tier lab generation state keyed by tier directory name "
+        "(e.g. 'tier1_foundations').",
+    )
+    theory: dict[str, str] = Field(
+        default_factory=dict,
+        description="Per-tier theory generation state keyed by tier directory name. "
+        "Values are 'complete', 'incomplete', or 'failed'.",
+    )
+    syllabus_review: str = Field(
+        default="incomplete",
+        description="Syllabus review state: 'complete' or 'incomplete'.",
+    )
+    qa_review: str = Field(
+        default="incomplete",
+        description="QA review state: 'complete' or 'incomplete'.",
     )
