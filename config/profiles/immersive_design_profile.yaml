@@ -1,0 +1,51 @@
+# =============================================================================
+# immersive_design_profile.yaml — Cohort Profile: Minor Immersive Design
+# Gebaseerd op de template structuur uit de beroeps2_profile.yaml
+# =============================================================================
+
+profile:
+  name: "MINOR — Immersive Design (BOL)" #
+  description: >
+    Een 32-weken durende, projectgestuurde minor waarin studenten ruimtelijk leren 
+    ontwerpen en ontwikkelen. De focus ligt op experimentatie met WebXR en Unity. 
+    Het traject start met een zintuiglijke hackathon en eindigt in het iteratief 
+    bouwen van een VR-applicatie voor externe hardware. De nadruk ligt op UX, 
+    onderzoekend vermogen en iteratieve oplevering. #
+
+# --- Cohort Demographics -----------------------------------------------------
+year_level: 2 # Aanname: aangezien jaar 3 de stage is, valt deze minor in jaar 2. #
+student_pathway: "BOL" #
+bpv_readiness: "pre-bpv" #
+
+# --- Tech Stack Baseline -----------------------------------------------------
+tech_stack:
+  primary_language: "JavaScript (WebXR) & C# (Unity)" #
+  framework: "Three.js of A-Frame, Meta XR Interaction SDK" #
+  frontend: "WebXR / VR UI Components" #
+  database: "Project Dependent (Local JSON / PlayerPrefs in Unity)" #
+  version_control: "Git (GitHub/GitLab met focus op feature branches en samenwerking)" #
+  editor: "VS Code & Unity Editor" #
+  testing:
+    framework: "In-Editor Playtesting & Unit Testing (indien van toepassing)" #
+    coverage_target: "N.v.t. (Focus op UX en iteratief experimenteren)" #
+  ci_cd: "GitHub Actions (Basis builds/linting voor WebXR, optioneel Unity Cloud Build)" #
+  containerisation: "None" #
+  deployment: "School-managed web server voor WebXR / Sideloading via Android/Quest voor VR" #
+
+# --- Kerntaken Emphasis ------------------------------------------------------
+kerntaken_emphasis:
+  P1-K1: "moderate"   # Planning via Scrum/Sprints in Project 3 #
+  P2-K1: "heavy"      # Designing (UX voor VR en 3D omgevingen) #
+  P3-K1: "heavy"      # Building (WebXR en Unity development) #
+  P4-K1: "moderate"   # Testing (Playtesting, iteratie en peer reviews) #
+
+# --- Static Constraints (injected into CourseSpecification) -------------------
+grading_scale: "OVG" #
+hardware_constraints: "Ontwikkel-PC's geschikt voor Unity/VR-development vereist. Er moet worden gerouleerd met de 12 beschikbare Meta Quest 2 brillen in groepen van 2-3 studenten." #
+
+# --- Assessment --------------------------------------------------------------
+assessment:
+  practical_exams: 0 # Toetsing op basis van proces, interviews en presentaties #
+  portfolio_items: 3  # Project 1 (WebXR), Project 2 (Unity Prototype), Project 3 (VR Applicatie) #
+  proeve_preparation: true #
+  code_reviews_per_semester: 3 # Minimaal 1 uitgebreide code review per project/periode #
