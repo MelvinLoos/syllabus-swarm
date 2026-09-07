@@ -75,6 +75,24 @@ from src.exporters.manifest import (
 _PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
 
 
+def _has_other_runs() -> bool:
+    """Check whether any output run directories already exist.
+
+    Used by ``_handle_write_labs`` to warn when a delegated agent is
+    creating a brand-new run directory while other runs already exist
+    (likely a wrong-run-id bug).
+    """
+    output_dir = _PROJECT_ROOT / "output"
+    if not output_dir.exists():
+        return False
+    for entry in output_dir.iterdir():
+        if entry.is_dir() and entry.name != "README.md" and not entry.name.startswith("."):
+            # Check if it looks like a run dir (contains date prefix)
+            if any(entry.iterdir()):
+                return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Tool result helpers
 # ---------------------------------------------------------------------------
@@ -364,6 +382,27 @@ class OutputExportTool(BaseTool):
                 "(e.g. run_id='2026-09-02_163321_Immersive_Design')."
             )
 
+        # ── Guard: warn if target run_id does not exist yet ─────────
+        target_run_dir = _PROJECT_ROOT / "output" / run_id
+        if not target_run_dir.exists() and _has_other_runs():
+            # The agent is creating a brand-new output directory while
+            # other runs exist — likely a delegated agent inventing its
+            # own run_id instead of using the one from context.
+            import sys as _sys
+            print(
+                f"\n{'!' * 60}\n"
+                f"  ⚠️  WARNING: write-labs is creating a NEW output directory\n"
+                f"      run_id:  {run_id}\n"
+                f"      tier:    {tier}\n"
+                f"      course:  {course_name}\n"
+                f"\n"
+                f"  If this is a delegated agent fixing files during QA review,\n"
+                f"  it may be writing to the WRONG directory.  The correct\n"
+                f"  run_id should match the existing output directory.\n"
+                f"{'!' * 60}\n",
+                file=_sys.stderr,
+            )
+
         files_raw = params.get("files")
         if not files_raw:
             return _err(
@@ -389,6 +428,22 @@ class OutputExportTool(BaseTool):
             )
 
         files_dict: dict[str, Any] = files_raw
+
+        # ── Guard: validate every path is under starter/, solution/,
+        # or theory/ — catch agents writing files at tier root level.
+        valid_prefixes = ("starter", "solution", "theory")
+        for rel_path in list(files_dict):
+            parts = str(rel_path).replace("\\", "/").split("/")
+            if parts and parts[0] not in valid_prefixes:
+                import sys as _sys2
+                print(
+                    f"\\n{'!' * 60}\\n"
+                    f"  ⚠️  WARNING: Lab file path '{rel_path}' is at tier root level.\\n"
+                    f"     Lab files MUST be under starter/, solution/, or theory/.\\n"
+                    f"     Example: 'starter/lab1.js' or 'theory/visualizer.html'\\n"
+                    f"{'!' * 60}\\n",
+                    file=_sys2.stderr,
+                )
 
         base = _PROJECT_ROOT / "output" / run_id / "labs" / tier
 
