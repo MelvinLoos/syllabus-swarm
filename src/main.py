@@ -847,7 +847,7 @@ def _maybe_print_iter_hint(error_text: str) -> None:
 
 
 def _print_summary(result: CrewResult, course_name: str) -> None:
-    """Print a clear success/failure summary for both agents."""
+    """Print a detailed success/failure summary for every pipeline component."""
     print(f"\n{'=' * 60}")
     print("  🐝  Syllabus Swarm — Results Summary")
     print(f"  Course: {course_name}")
@@ -869,6 +869,26 @@ def _print_summary(result: CrewResult, course_name: str) -> None:
             print(f"      ↳ {result.syllabus_error}")
             _maybe_print_iter_hint(result.syllabus_error)
 
+    # ── Syllabus Review ───────────────────
+    if result.syllabus_review_ok:
+        print("  ✅  Syllabus Review  —  SUCCESS")
+    elif result.syllabus_review_error:
+        print("  ⚠️  Syllabus Review  —  ISSUES FOUND")
+        print(f"      ↳ {result.syllabus_review_error}")
+        _maybe_print_iter_hint(result.syllabus_review_error)
+
+    # ── Theory Instructor ───────────────────
+    if result.theory_ok:
+        print("  ✅  Theory Instructor  —  SUCCESS")
+    elif result.theory_error:
+        print("  ❌  Theory Instructor  —  FAILED")
+        print(f"      ↳ {result.theory_error}")
+        _maybe_print_iter_hint(result.theory_error)
+    elif not result.syllabus_ok:
+        print("  ⏭️  Theory Instructor  —  SKIPPED (no syllabus)")
+    else:
+        print("  ⏭️  Theory Instructor  —  SKIPPED")
+
     # ── Labs Agent ──────────────────────────
     if result.labs_ok:
         print("  ✅  Lab & Project Developer  —  SUCCESS")
@@ -881,16 +901,12 @@ def _print_summary(result: CrewResult, course_name: str) -> None:
             _maybe_print_iter_hint(result.labs_error)
 
     # ── QA Reviewer ─────────────────────────
-    if not result.qa_ok and result.qa_error:
+    if result.qa_ok:
+        print("  ✅  QA Reviewer  —  COMPLETED")
+    elif result.qa_error:
         print("  ⚠️  QA Reviewer  —  ISSUE")
         print(f"      ↳ {result.qa_error}")
         _maybe_print_iter_hint(result.qa_error)
-
-    # ── Theory Instructor ───────────────────
-    if not result.theory_ok and result.theory_error:
-        print("  ❌  Theory Instructor  —  FAILED")
-        print(f"      ↳ {result.theory_error}")
-        _maybe_print_iter_hint(result.theory_error)
 
     # ── Manifest ────────────────────────────
     print()
@@ -906,11 +922,19 @@ def _print_summary(result: CrewResult, course_name: str) -> None:
     print()
     if result.all_succeeded:
         print("  🎉  All agents completed successfully!")
-    elif result.syllabus_ok:
-        print("  ⚠️   Syllabus generated but labs failed.")
     else:
-        print("  💥  Both agents failed.")
-        print("      Check OPENROUTER_API_KEY and network connectivity.")
+        issues: list[str] = []
+        if not result.syllabus_ok:
+            issues.append("syllabus generation")
+        if not result.syllabus_review_ok and result.syllabus_review_error:
+            issues.append("syllabus review")
+        if not result.theory_ok:
+            issues.append("theory artifacts")
+        if not result.labs_ok:
+            issues.append("lab generation")
+        if not result.qa_ok and result.qa_error:
+            issues.append("QA review")
+        print(f"  ⚠️   Pipeline completed with issues in: {', '.join(issues)}")
     print(f"{'=' * 60}\n")
 
 
@@ -1133,9 +1157,16 @@ def main(argv: list[str] | None = None) -> None:
     # Compute run_id *before* the intake so we can save the session
     # inside the same run directory the crew will use later.
     safe_name = _sanitize_filename(course_name)
-    run_id = generate_run_id(safe_name)
-    run_dir = OUTPUT_ROOT / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+
+    if resume_dir:
+        # In-place resume: reuse the existing directory's run_id.
+        resume_path = Path(resume_dir)
+        run_id = resume_path.name
+        run_dir = resume_path
+    else:
+        run_id = generate_run_id(safe_name)
+        run_dir = OUTPUT_ROOT / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'=' * 60}")
     print("  🐝  Syllabus Swarm")
