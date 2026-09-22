@@ -14,17 +14,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from src.crews.syllabus_crew import (
+    _count_lab_files,
     _is_tier_labs_complete,
     _is_tier_theory_complete,
-    _count_lab_files,
     load_generation_state,
     save_generation_state,
 )
 from src.models import GenerationState, TierState
-
 
 # ---------------------------------------------------------------------------
 # TierState / GenerationState model tests
@@ -108,6 +105,7 @@ class TestGenerationState:
         assert parsed["run_id"] == "r"
         assert parsed["course_name"] == "c"
         assert "tiers" in parsed
+
 
 # ---------------------------------------------------------------------------
 # Filesystem check tests
@@ -211,6 +209,7 @@ class TestCountLabFiles:
         (tier_path / "starter" / ".hidden.js").write_text("")
         (tier_path / "starter" / "lab1.js").write_text("// TODO")
         assert _count_lab_files(tier_path) == 1
+
 
 # ---------------------------------------------------------------------------
 # State I/O tests (load_generation_state / save_generation_state)
@@ -346,9 +345,7 @@ class TestSaveGenerationState:
         state_file = run_dir / "_generation_state.json"
         assert state_file.exists()
 
-        loaded = GenerationState.model_validate_json(
-            state_file.read_text(encoding="utf-8")
-        )
+        loaded = GenerationState.model_validate_json(state_file.read_text(encoding="utf-8"))
         assert loaded.run_id == gs.run_id
         assert loaded.course_name == gs.course_name
         assert loaded.tiers["tier1_foundations"].status == "complete"

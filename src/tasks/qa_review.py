@@ -208,11 +208,11 @@ def create_qa_review_task(
         f"### 🔴  CRITICAL: Delegated Agents MUST Write to the Correct Directory\n\n"
         f"When you delegate a fix, you **MUST** instruct the coworker to use "
         f"the **exact** `run_id` shown in the Labs Directory path above "
-        f"(e.g., `run_id=\"{run_id or 'RUN_ID'}\"`).  The coworker MUST use this "
+        f'(e.g., `run_id="{run_id or "RUN_ID"}"`).  The coworker MUST use this '
         f"`run_id` in ALL `write-labs` and `write-directory-tree` tool calls.\n\n"
         f"❌ **WRONG:** using a made-up run_id like "
-        f"`run_id=\"2023-06-15_120000_Some_Random_Name\"`\n"
-        f"✅ **CORRECT:** `run_id=\"{run_id or 'RUN_ID'}\"` "
+        f'`run_id="2023-06-15_120000_Some_Random_Name"`\n'
+        f'✅ **CORRECT:** `run_id="{run_id or "RUN_ID"}"` '
         f"(the run_id from the Labs Directory above)\n\n"
         f"Using the wrong `run_id` causes files to be written to a completely "
         f"different directory, making them invisible to this review. "

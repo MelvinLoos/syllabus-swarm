@@ -150,7 +150,7 @@ def _annotate_iter_exhaustion(
         "⚠️  ITERATION LIMIT EXHAUSTION DETECTED",
         "",
         "   The agent exceeded its max_iter budget.  CrewAI emitted:",
-        f"   \"{_MAX_ITER_CREWAI_MARKER}\"",
+        f'   "{_MAX_ITER_CREWAI_MARKER}"',
         "",
         "   👉  Increase the limit by setting this in your .env file:",
         f"       {env_var}=<higher_value>",
@@ -388,7 +388,9 @@ def load_generation_state(run_dir: Path) -> GenerationState | None:
         return None
 
     state_path = run_dir / _STATE_FILE_NAME
-    course_name = run_dir.name.split("_", 2)[-1] if len(run_dir.name.split("_", 2)) >= 3 else run_dir.name
+    course_name = (
+        run_dir.name.split("_", 2)[-1] if len(run_dir.name.split("_", 2)) >= 3 else run_dir.name
+    )
 
     if state_path.exists():
         try:
@@ -443,10 +445,7 @@ def _is_tier_labs_complete(tier_labs_path: Path) -> bool:
         sub_path = tier_labs_path / subdir
         if not sub_path.exists():
             return False
-        real_files = [
-            f for f in sub_path.iterdir()
-            if f.is_file() and not f.name.startswith(".")
-        ]
+        real_files = [f for f in sub_path.iterdir() if f.is_file() and not f.name.startswith(".")]
         if not real_files:
             return False
     return True
@@ -461,10 +460,7 @@ def _is_tier_theory_complete(tier_labs_path: Path) -> bool:
     theory_path = tier_labs_path / "theory"
     if not theory_path.exists():
         return False
-    real_files = [
-        f for f in theory_path.iterdir()
-        if f.is_file() and not f.name.startswith(".")
-    ]
+    real_files = [f for f in theory_path.iterdir() if f.is_file() and not f.name.startswith(".")]
     return bool(real_files)
 
 
@@ -479,10 +475,7 @@ def _count_lab_files(tier_labs_path: Path) -> int:
         sub_path = tier_labs_path / subdir
         if not sub_path.exists():
             continue
-        count += sum(
-            1 for f in sub_path.iterdir()
-            if f.is_file() and not f.name.startswith(".")
-        )
+        count += sum(1 for f in sub_path.iterdir() if f.is_file() and not f.name.startswith("."))
     return count
 
 
@@ -830,9 +823,7 @@ def run_syllabus_crew(
                 tier_theory_status = state.theory.get(tier_dir_name)
                 if tier_theory_status == "complete":
                     if verbose:
-                        print(
-                            f"  ⏭️  Theory for {tier_dir_name}: already complete, skipping."
-                        )
+                        print(f"  ⏭️  Theory for {tier_dir_name}: already complete, skipping.")
                     continue
 
             # Also check filesystem (backward compat / first resume)
@@ -842,9 +833,7 @@ def run_syllabus_crew(
                     state.theory[tier_dir_name] = "complete"
                     save_generation_state(run_dir, state)
                 if verbose:
-                    print(
-                        f"  ⏭️  Theory for {tier_dir_name}: already complete, skipping."
-                    )
+                    print(f"  ⏭️  Theory for {tier_dir_name}: already complete, skipping.")
                 continue
 
             # ── Generate theory for this tier ─────────────────────────
@@ -880,9 +869,7 @@ def run_syllabus_crew(
                         report_path = report_dir / f"VALIDATION_REPORT_{tier_dir_name}.md"
                         report_path.write_text(report, encoding="utf-8")
 
-                        tier_has_errors = any(
-                            r.error_count > 0 for r in tier_results
-                        )
+                        tier_has_errors = any(r.error_count > 0 for r in tier_results)
                         if tier_has_errors:
                             all_theory_tiers_ok = False
                             if verbose:
@@ -909,9 +896,7 @@ def run_syllabus_crew(
                 if state:
                     state.theory[tier_dir_name] = "failed"
                     save_generation_state(run_dir, state)
-                exc_msg = _annotate_iter_exhaustion(
-                    str(exc), "THEORY_INSTRUCTOR", parent_error=exc
-                )
+                exc_msg = _annotate_iter_exhaustion(str(exc), "THEORY_INSTRUCTOR", parent_error=exc)
                 if verbose:
                     print(
                         f"  ❌  Theory for {tier_dir_name} failed: {exc_msg}",
@@ -920,9 +905,7 @@ def run_syllabus_crew(
 
         theory_ok = all_theory_tiers_ok
         if not theory_ok:
-            theory_error = (
-                "One or more theory tiers failed. See logs above for details."
-            )
+            theory_error = "One or more theory tiers failed. See logs above for details."
 
     else:
         theory_error = "Skipped — Curriculum Architect produced no syllabus to use as context."
@@ -1038,10 +1021,7 @@ def run_syllabus_crew(
                         )
                         save_generation_state(run_dir, lab_state)
                     if verbose:
-                        print(
-                            f"  ⏭️  {tier_name}: already complete "
-                            f"(filesystem check), skipping."
-                        )
+                        print(f"  ⏭️  {tier_name}: already complete (filesystem check), skipping.")
                     continue
 
                 if not _generate_tier(tier_name):

@@ -247,7 +247,9 @@ class OutputExportTool(BaseTool):
         ValueError
             If the resolved path is not under ``output/``.
         """
-        resolved = (Path(target) if Path(target).is_absolute() else _PROJECT_ROOT / target).resolve()
+        resolved = (
+            Path(target) if Path(target).is_absolute() else _PROJECT_ROOT / target
+        ).resolve()
         output_root = (_PROJECT_ROOT / "output").resolve()
         try:
             resolved.relative_to(output_root)
@@ -389,6 +391,7 @@ class OutputExportTool(BaseTool):
             # other runs exist — likely a delegated agent inventing its
             # own run_id instead of using the one from context.
             import sys as _sys
+
             print(
                 f"\n{'!' * 60}\n"
                 f"  ⚠️  WARNING: write-labs is creating a NEW output directory\n"
@@ -436,6 +439,7 @@ class OutputExportTool(BaseTool):
             parts = str(rel_path).replace("\\", "/").split("/")
             if parts and parts[0] not in valid_prefixes:
                 import sys as _sys2
+
                 print(
                     f"\\n{'!' * 60}\\n"
                     f"  ⚠️  WARNING: Lab file path '{rel_path}' is at tier root level.\\n"

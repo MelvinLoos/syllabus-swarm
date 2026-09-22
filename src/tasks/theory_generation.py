@@ -329,10 +329,7 @@ def create_theory_task(
             f"{format_guide}\n\n"
         )
 
-    description_parts.append(
-        f"{_ARTIFACT_REQUIREMENTS}\n\n"
-        f"{_TOOL_USAGE_MANDATE}\n"
-    )
+    description_parts.append(f"{_ARTIFACT_REQUIREMENTS}\n\n{_TOOL_USAGE_MANDATE}\n")
 
     description = "".join(description_parts)
 
