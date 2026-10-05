@@ -17,7 +17,7 @@ Key features
   1. Per-agent override  → ``AGENT_{ROLE}_{PROPERTY}``
   2. Agent-wide default   → ``AGENT_DEFAULT_{PROPERTY}``
   3. Hardcoded sensible defaults
-* Always targets ``https://openrouter.ai/api/v1`` as the base URL.
+* Always targets the provider specified by ``BASE_URL``.
 * :func:`list_agent_configs` prints the effective configuration of every
   known agent for diagnostics and debugging.
 
@@ -32,6 +32,19 @@ Usage
 from __future__ import annotations
 
 import os
+import sys
+from collections.abc import Iterable
+from dataclasses import dataclass
+
+# Fail fast with a clear message instead of a confusing ``ModuleNotFoundError``
+# (or an ``ImportError`` from ``datetime.UTC``) when an older interpreter is
+# used.  The project requires Python 3.12+.
+if sys.version_info < (3, 12):
+    raise SystemExit(
+        "syllabus-swarm requires Python 3.12+ "
+        f"(running {'.'.join(map(str, sys.version_info[:3]))}).\n"
+        "Activate the project .venv or run with `python3.12`."
+    )
 
 from crewai import LLM
 from dotenv import load_dotenv
@@ -43,9 +56,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ---------------------------------------------------------------------------
-# Constants — OpenRouter
+# Constants — Provider configuration (env-var driven, model-agnostic)
 # ---------------------------------------------------------------------------
-OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+# BASE_URL is read from the environment so the factory is portable across
+# any OpenAI-compatible provider (OpenRouter, Together, Fireworks, local
+# Ollama/vLLM, etc.).  The fallback value ensures backward compatibility
+# with existing OpenRouter deployments.
+_BASE_URL: str = os.getenv("BASE_URL", "https://openrouter.ai/api/v1")
+
+
+def _get_base_url() -> str:
+    """Return the effective base URL, respecting the BASE_URL env var."""
+    return os.getenv("BASE_URL", _BASE_URL)
+
 
 # ---------------------------------------------------------------------------
 # Agent role constants
@@ -57,6 +80,9 @@ INTAKE_SPECIALIST: str = "INTAKE_SPECIALIST"
 QA_REVIEWER: str = "QA_REVIEWER"
 THEORY_INSTRUCTOR: str = "THEORY_INSTRUCTOR"
 EDUCATION_DIRECTOR: str = "EDUCATION_DIRECTOR"
+VIDEO_ENGINEER: str = "VIDEO_ENGINEER"
+INSTRUCTIONAL_COORDINATOR: str = "INSTRUCTIONAL_COORDINATOR"
+PRESENTATION_DESIGNER: str = "PRESENTATION_DESIGNER"
 
 # All known agent roles (used by list_agent_configs).
 _KNOWN_ROLES: tuple[str, ...] = (
@@ -67,7 +93,22 @@ _KNOWN_ROLES: tuple[str, ...] = (
     QA_REVIEWER,
     THEORY_INSTRUCTOR,
     EDUCATION_DIRECTOR,
+    VIDEO_ENGINEER,
+    INSTRUCTIONAL_COORDINATOR,
+    PRESENTATION_DESIGNER,
 )
+
+# ---------------------------------------------------------------------------
+# System One (Jev) decision-task constants
+# ---------------------------------------------------------------------------
+# These are NOT CrewAI agent roles: they identify the deterministic decision
+# tasks that are answered by the non-generative System One model.  Each task
+# can be tuned independently (`SYSTEM_ONE_{TASK}_{PROPERTY}`).
+SYSTEM_ONE: str = "SYSTEM_ONE"
+MODALITY_ROUTER: str = "MODALITY_ROUTER"
+QA_SCORER: str = "QA_SCORER"
+SYLLABUS_GATE: str = "SYLLABUS_GATE"
+SYSTEM_ONE_TASKS: tuple[str, ...] = (MODALITY_ROUTER, QA_SCORER, SYLLABUS_GATE)
 
 # ---------------------------------------------------------------------------
 # Property names used in environment variable construction.
@@ -91,10 +132,36 @@ _rpm_default: int | None = None
 # the recommended path.  Agent modules MUST NOT hardcode model IDs — they
 # always delegate to build_llm_for_agent().
 # ---------------------------------------------------------------------------
-_DEFAULT_MODEL: str = "deepseek/deepseek-v4-pro"
+_DEFAULT_MODEL: str = "openrouter/deepseek/deepseek-v4-pro"
 _DEFAULT_TEMPERATURE: float = 0.2
 _DEFAULT_TOP_P: float = 0.1
-_DEFAULT_MAX_TOKENS: int = 8192
+_DEFAULT_MAX_TOKENS: int = 32768
+# ---------------------------------------------------------------------------
+# Models with built-in reasoning that consume tokens internally before
+# producing visible output.  When these models are configured with
+# max_tokens < 16384, they commonly return NULL content because all
+# tokens are spent on reasoning.
+# ---------------------------------------------------------------------------
+_REASONING_MODEL_PATTERNS: tuple[str, ...] = (
+    "claude-opus-5.5",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "gpt-5",
+)
+_MIN_SAFE_MAX_TOKENS_REASONING: int = 16384
+
+# ---------------------------------------------------------------------------
+# System One (Jev) defaults — the non-generative decision model
+# ---------------------------------------------------------------------------
+# System One is NOT an LLM: it exposes no temperature/top_p/max_tokens.  Only
+# a model id, an endpoint, an API key and a timeout are configurable.  The
+# base URL is a *distinct* environment variable (SYSTEM_ONE_BASE_URL) so this
+# module keeps exactly one OpenRouter URL literal (see test_llm_factory.py).
+_SYSTEM_ONE_DEFAULT_MODEL: str = "jev-latest"
+_SYSTEM_ONE_DEFAULT_BASE_URL: str = "https://api.typesafe.ai"
+_SYSTEM_ONE_DEFAULT_TIMEOUT: float = 10.0
+_SYSTEM_ONE_ENV_PREFIX: str = "SYSTEM_ONE"
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -223,7 +290,7 @@ def build_llm_for_agent(
 ) -> LLM:
     """Build a ``crewai.LLM`` instance configured for a specific agent.
 
-    All agents connect through **OpenRouter** (https://openrouter.ai/api/v1).
+    All agents connect through the provider specified by ``BASE_URL``.
     Model, temperature, top_p, and max_tokens are resolved through a 3-tier
     fallback chain that allows per-agent customisation while always falling
     back to a working configuration — even when no environment variables are
@@ -252,7 +319,11 @@ def build_llm_for_agent(
         raise ValueError(f"agent_role must be a non-empty string, got {agent_role!r}")
 
     # Resolve the API key — use explicit argument first, then env var.
-    resolved_api_key: str = api_key if api_key is not None else os.getenv("OPENROUTER_API_KEY", "")
+    resolved_api_key: str = (
+        api_key
+        if api_key is not None
+        else os.getenv("OPENROUTER_API_KEY") or os.getenv("API_KEY", "")
+    )
 
     model: str = _resolve_property(
         agent_role,
@@ -280,14 +351,153 @@ def build_llm_for_agent(
         )
     )
 
+    # Warn if a reasoning model is configured with low max_tokens.
+    model_lower = model.lower()
+    if any(pattern in model_lower for pattern in _REASONING_MODEL_PATTERNS):
+        if max_tokens < _MIN_SAFE_MAX_TOKENS_REASONING:
+            import warnings
+
+            warnings.warn(
+                f"Agent '{agent_role}' uses reasoning model '{model}' with "
+                f"max_tokens={max_tokens}. Reasoning models consume tokens "
+                f"internally before producing output; values below "
+                f"{_MIN_SAFE_MAX_TOKENS_REASONING} commonly return NULL "
+                f"content. Set AGENT_{agent_role}_MAX_TOKENS >= "
+                f"{_MIN_SAFE_MAX_TOKENS_REASONING} in .env.",
+                stacklevel=2,
+            )
+
     return LLM(
         model=model,
         api_key=resolved_api_key,
-        base_url=OPENROUTER_BASE_URL,
+        base_url=_get_base_url(),
         temperature=temperature,
         top_p=top_p,
         max_tokens=max_tokens,
     )
+
+
+# ---------------------------------------------------------------------------
+# System One (Jev) — decision client factory
+# ---------------------------------------------------------------------------
+# Mirrors the generative 3-tier fallback chain so every decision task can be
+# tuned independently without touching code:
+#   1. SYSTEM_ONE_{TASK}_{PROPERTY}  — per-decision-task override
+#   2. SYSTEM_ONE_{PROPERTY}         — decision-layer default
+#   3. hardcoded default             — baked-in fallback
+
+
+def _resolve_system_one_string(task: str, property_name: str, *, default: str) -> str:
+    """Resolve a System One string property through the 3-tier chain."""
+    if task and task != SYSTEM_ONE:
+        per_task = os.getenv(f"{_SYSTEM_ONE_ENV_PREFIX}_{task}_{property_name}")
+        if per_task is not None:
+            return per_task
+    value = os.getenv(f"{_SYSTEM_ONE_ENV_PREFIX}_{property_name}")
+    if value is not None:
+        return value
+    return default
+
+
+def resolve_system_one_model(task: str = SYSTEM_ONE) -> str:
+    """Return the System One model id for *task* (e.g. ``"jev-latest"``)."""
+    return _resolve_system_one_string(task, "MODEL", default=_SYSTEM_ONE_DEFAULT_MODEL)
+
+
+def resolve_system_one_base_url() -> str:
+    """Return the System One API base URL, respecting ``SYSTEM_ONE_BASE_URL``."""
+    return _resolve_system_one_string(
+        SYSTEM_ONE,
+        "BASE_URL",
+        default=_SYSTEM_ONE_DEFAULT_BASE_URL,
+    )
+
+
+def resolve_system_one_api_key() -> str:
+    """Return the System One API key, falling back to ``TYPESAFE_API_KEY``."""
+    return (
+        os.getenv("SYSTEM_ONE_API_KEY")
+        or os.getenv("TYPESAFE_API_KEY")
+        or ""
+    )
+
+
+def resolve_system_one_timeout() -> float:
+    """Return the per-request System One timeout in seconds."""
+    raw = _resolve_system_one_string(
+        SYSTEM_ONE,
+        "TIMEOUT",
+        default=str(_SYSTEM_ONE_DEFAULT_TIMEOUT),
+    )
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return _SYSTEM_ONE_DEFAULT_TIMEOUT
+    return value if value > 0 else _SYSTEM_ONE_DEFAULT_TIMEOUT
+
+
+def system_one_enabled() -> bool:
+    """Return False when ``SYSTEM_ONE_ENABLED`` explicitly disables the layer."""
+    raw = (os.getenv(f"{_SYSTEM_ONE_ENV_PREFIX}_ENABLED") or "").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def build_system_one_client(
+    *,
+    task: str = SYSTEM_ONE,
+    api_key: str | None = None,
+):
+    """Build the non-generative System One decision client for *task*.
+
+    Parameters
+    ----------
+    task : str
+        Decision-task identifier (``MODALITY_ROUTER``, ``QA_SCORER`` or
+        ``SYLLABUS_GATE``).  Used to resolve per-task model overrides.
+    api_key : str or None
+        Explicit key; otherwise resolved from ``SYSTEM_ONE_API_KEY`` /
+        ``TYPESAFE_API_KEY``.
+
+    Returns
+    -------
+    SystemOneClient or None
+        A live :class:`src.system_one.TypeSafeSystemOneClient` when a key is
+        configured, a degraded :class:`src.system_one.FakeSystemOneClient`
+        when the layer is explicitly disabled (``SYSTEM_ONE_ENABLED=0``), or
+        ``None`` when no API key is available so the caller can decide how to
+        degrade.
+    """
+    from src.system_one import (  # noqa: PLC0415 - Layer 4 -> Layer 4, kept local
+        FakeSystemOneClient,
+        TypeSafeSystemOneClient,
+    )
+
+    if not system_one_enabled():
+        return FakeSystemOneClient(model="system-one-disabled", heuristic=True)
+
+    resolved_key = api_key if api_key is not None else resolve_system_one_api_key()
+    if not resolved_key:
+        return None
+
+    return TypeSafeSystemOneClient(
+        api_key=resolved_key,
+        model=resolve_system_one_model(task),
+        base_url=resolve_system_one_base_url(),
+        timeout=resolve_system_one_timeout(),
+    )
+
+
+def get_effective_system_one_config(task: str = SYSTEM_ONE) -> dict[str, object]:
+    """Return the resolved System One configuration for diagnostics."""
+    key_status = "set" if resolve_system_one_api_key() else "missing — decisions disabled"
+    return {
+        "task": task,
+        "model": resolve_system_one_model(task),
+        "base_url": resolve_system_one_base_url(),
+        "timeout": resolve_system_one_timeout(),
+        "enabled": system_one_enabled(),
+        "api_key_status": key_status,
+    }
 
 
 def get_effective_config(agent_role: str) -> dict[str, object]:
@@ -300,7 +510,7 @@ def get_effective_config(agent_role: str) -> dict[str, object]:
     settings), resolved separately via :func:`resolve_max_iter` and
     :func:`resolve_max_rpm`.
     """
-    resolved_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
+    resolved_api_key: str = os.getenv("OPENROUTER_API_KEY") or os.getenv("API_KEY", "")
     api_key_status: str = "set" if resolved_api_key else "missing — authentication will fail"
 
     return {
@@ -327,9 +537,173 @@ def get_effective_config(agent_role: str) -> dict[str, object]:
                 hardcoded_default=_DEFAULT_MAX_TOKENS,
             )
         ),
-        "base_url": OPENROUTER_BASE_URL,
+        "base_url": _get_base_url(),
         "api_key_status": api_key_status,
     }
+
+
+# ---------------------------------------------------------------------------
+# Configuration pre-flight audit — early warning before any credits are spent
+# ---------------------------------------------------------------------------
+# The single most common cause of the CrewAI error
+# ``"Invalid response from LLM call - None or empty"`` is a *reasoning* model
+# configured with a ``max_tokens`` budget that is too small: the model spends
+# its entire allowance on internal reasoning and emits no visible content.
+# Retrying that call cannot help and only burns credits, so the audit below
+# detects the misconfiguration **before** the pipeline starts and surfaces it
+# as a fatal, actionable finding.
+
+
+@dataclass(frozen=True)
+class ConfigIssue:
+    """A single pre-flight finding for one agent's LLM configuration.
+
+    Attributes
+    ----------
+    role : str
+        Agent role the finding applies to (e.g. ``THEORY_INSTRUCTOR``).
+    severity : str
+        Either ``"fatal"`` (the run must not start) or ``"warning"``
+        (the run may start, but the configuration is risky).
+    message : str
+        Human-readable description of the detected problem.
+    fix : str
+        Concrete remediation, including the exact ``.env`` key to change.
+    """
+
+    role: str
+    severity: str
+    message: str
+    fix: str
+
+
+def _is_reasoning_model(model: str) -> bool:
+    """Return True when *model* is a known built-in-reasoning model."""
+    lowered = model.lower()
+    return any(pattern in lowered for pattern in _REASONING_MODEL_PATTERNS)
+
+
+def audit_agent_config(agent_role: str) -> list[ConfigIssue]:
+    """Inspect one agent's effective LLM config for known failure modes.
+
+    This is a *static* check — it makes no API calls and costs nothing.  It
+    catches the two configuration problems that reliably produce the
+    ``"Invalid response from LLM call - None or empty"`` failure:
+
+    1. **Reasoning model with a token budget that is too small** (fatal).
+       Reasoning tokens are consumed before any visible output, so a budget
+       below :data:`_MIN_SAFE_MAX_TOKENS_REASONING` yields NULL content.
+    2. **Reasoning model with very restrictive ``top_p``** (warning).
+       Extremely low values can degenerate into empty completions,
+       particularly on tool-calling steps.
+
+    Parameters
+    ----------
+    agent_role : str
+        Uppercase snake_case agent identifier.
+
+    Returns
+    -------
+    list[ConfigIssue]
+        Zero or more findings (empty when the configuration is healthy).
+    """
+    cfg = get_effective_config(agent_role)
+    model = str(cfg["model"])
+    max_tokens = int(cfg["max_tokens"])  # type: ignore[arg-type]
+    top_p = float(cfg["top_p"])  # type: ignore[arg-type]
+
+    issues: list[ConfigIssue] = []
+
+    if not model.strip():
+        issues.append(
+            ConfigIssue(
+                role=agent_role,
+                severity="fatal",
+                message=f"{agent_role}: no model is configured.",
+                fix=f"Set AGENT_{agent_role}_MODEL (or AGENT_DEFAULT_MODEL) in .env.",
+            )
+        )
+        return issues
+
+    is_reasoning = _is_reasoning_model(model)
+
+    if is_reasoning and max_tokens < _MIN_SAFE_MAX_TOKENS_REASONING:
+        issues.append(
+            ConfigIssue(
+                role=agent_role,
+                severity="fatal",
+                message=(
+                    f"{agent_role}: reasoning model '{model}' is configured with "
+                    f"max_tokens={max_tokens}, below the safe minimum of "
+                    f"{_MIN_SAFE_MAX_TOKENS_REASONING}."
+                ),
+                fix=(
+                    f"Set AGENT_{agent_role}_MAX_TOKENS="
+                    f"{_MIN_SAFE_MAX_TOKENS_REASONING} (or higher) in .env. "
+                    "Reasoning tokens are consumed before visible output, so a "
+                    "smaller budget makes the model return NULL content and "
+                    "aborts the run with 'Invalid response from LLM call - "
+                    "None or empty'."
+                ),
+            )
+        )
+
+    if is_reasoning and top_p < 0.5:
+        issues.append(
+            ConfigIssue(
+                role=agent_role,
+                severity="warning",
+                message=(
+                    f"{agent_role}: reasoning model '{model}' uses top_p="
+                    f"{top_p} (very restrictive sampling)."
+                ),
+                fix=(
+                    f"Consider raising AGENT_{agent_role}_TOP_P to ~0.7-0.9. "
+                    "Extremely low top_p can degenerate into empty completions "
+                    "on tool-calling steps."
+                ),
+            )
+        )
+
+    return issues
+
+
+def audit_agent_configs(
+    agent_roles: Iterable[str] | None = None,
+) -> list[ConfigIssue]:
+    """Audit several agents at once.
+
+    Parameters
+    ----------
+    agent_roles : Iterable[str] or None
+        Roles to audit.  Defaults to every known role
+        (:data:`_KNOWN_ROLES`) when None.
+
+    Returns
+    -------
+    list[ConfigIssue]
+        Concatenated findings for every audited role.
+    """
+    roles = tuple(agent_roles) if agent_roles is not None else _KNOWN_ROLES
+    issues: list[ConfigIssue] = []
+    for role in roles:
+        issues.extend(audit_agent_config(role))
+    return issues
+
+
+def has_fatal_config_issues(issues: Iterable[ConfigIssue]) -> bool:
+    """Return True when *issues* contains at least one ``"fatal"`` finding."""
+    return any(issue.severity == "fatal" for issue in issues)
+
+
+def format_config_issues(issues: Iterable[ConfigIssue]) -> str:
+    """Render *issues* as a human-readable, copy-pasteable block."""
+    lines: list[str] = []
+    for issue in issues:
+        icon = "⛔" if issue.severity == "fatal" else "⚠️ "
+        lines.append(f"  {icon}  [{issue.severity.upper()}] {issue.message}")
+        lines.append(f"       → {issue.fix}")
+    return "\n".join(lines)
 
 
 def list_agent_configs() -> None:
@@ -344,10 +718,20 @@ def list_agent_configs() -> None:
     print("=" * 60)
     print()
 
-    print(f"  OpenRouter Base URL:  {OPENROUTER_BASE_URL}")
+    print(f"  OpenRouter Base URL:  {_get_base_url()}")
     api_key = os.getenv("OPENROUTER_API_KEY", "")
     status = "set" if api_key else "missing — authentication will fail"
     print(f"  API Key:              {status}")
+    print()
+
+    # --- System One (Jev) decision layer ---
+    print("-- System One (Jev) Decision Layer " + "-" * 29)
+    for task in (SYSTEM_ONE, *SYSTEM_ONE_TASKS):
+        cfg = get_effective_system_one_config(task)
+        label = cfg["model"] if cfg["enabled"] else "(disabled)"
+        print(f"  {task:.<40} {label}")
+    print(f"  {'base_url':.<40} {resolve_system_one_base_url()}")
+    print(f"  {'api_key':.<40} {'set' if resolve_system_one_api_key() else 'missing'}")
     print()
 
     # --- LLM env vars ---

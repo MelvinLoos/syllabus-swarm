@@ -1,51 +1,75 @@
 # =============================================================================
-# immersive_design_profile.yaml — Cohort Profile: Minor Immersive Design
-# Gebaseerd op de template structuur uit de beroeps2_profile.yaml
+# Cohort Profile: MINOR2 Immersive Design
 # =============================================================================
 
+# ---------------------------------------------------------------------------
+# TOP-LEVEL METADATA — REQUIRED
+# ---------------------------------------------------------------------------
+
 profile:
-  name: "MINOR — Immersive Design (BOL)" #
+  name: "MINOR2 Immersive Design (WebXR & Unity) — BOL Pathway (Year 2)"
   description: >
-    Een 32-weken durende, projectgestuurde minor waarin studenten ruimtelijk leren 
-    ontwerpen en ontwikkelen. De focus ligt op experimentatie met WebXR en Unity. 
-    Het traject start met een zintuiglijke hackathon en eindigt in het iteratief 
-    bouwen van een VR-applicatie voor externe hardware. De nadruk ligt op UX, 
-    onderzoekend vermogen en iteratieve oplevering. #
+    Creative Software Developer (MBO 4) studenten in hun tweede jaar. Ze hebben een 
+    sterke basis in HTML, CSS, JavaScript (DOM, OOP, arrays, events) en PHP (CRUD).
+    Deze 32-weken durende minor (Keuzedeel K0781: Virtual en augmented reality) 
+    introduceert ze in ruimtelijk denken, 3D-interfaces en de C# syntax via Unity. 
+    Om de cognitieve belasting te managen start het programma met WebXR (HTML/JS) 
+    en een multidisciplinair cross-over project met Physical Digital studenten (die 
+    fysieke controllers bouwen voor WebXR). In de tweede helft wordt de overstap naar 
+    Unity gemaakt voor de realisatie van een klantcasus. Het onderwijs is 100% 
+    studio-gestuurd (geen zelfstudie).
 
-# --- Cohort Demographics -----------------------------------------------------
-year_level: 2 # Aanname: aangezien jaar 3 de stage is, valt deze minor in jaar 2. #
-student_pathway: "BOL" #
-bpv_readiness: "pre-bpv" #
+# ---------------------------------------------------------------------------
+# COHORT DEMOGRAPHICS
+# ---------------------------------------------------------------------------
 
-# --- Tech Stack Baseline -----------------------------------------------------
+year_level: 2
+student_pathway: "BOL"
+bpv_readiness: "bpv-ready"
+
+# ---------------------------------------------------------------------------
+# TECH STACK BASELINE
+# ---------------------------------------------------------------------------
+
 tech_stack:
-  primary_language: "JavaScript (WebXR) & C# (Unity)" #
-  framework: "Three.js of A-Frame, Meta XR Interaction SDK" #
-  frontend: "WebXR / VR UI Components" #
-  database: "Project Dependent (Local JSON / PlayerPrefs in Unity)" #
-  version_control: "Git (GitHub/GitLab met focus op feature branches en samenwerking)" #
-  editor: "VS Code & Unity Editor" #
+  primary_language: "JavaScript / C#"
+  framework: "A-Frame / Unity"
+  frontend: "HTML5 / WebXR"
+  database: "N/A"
+  version_control: "Git (GitHub Classroom)"
+  editor: "VS Code / Unity Editor"
+  
   testing:
-    framework: "In-Editor Playtesting & Unit Testing (indien van toepassing)" #
-    coverage_target: "N.v.t. (Focus op UX en iteratief experimenteren)" #
-  ci_cd: "GitHub Actions (Basis builds/linting voor WebXR, optioneel Unity Cloud Build)" #
-  containerisation: "None" #
-  deployment: "School-managed web server voor WebXR / Sideloading via Android/Quest voor VR" #
+    framework: "User Testing / Zintuigelijke Validatie (Testplan volgens KD)"
+    coverage_target: "N/A"
 
-# --- Kerntaken Emphasis ------------------------------------------------------
+  ci_cd: "N/A"
+  containerisation: "N/A"
+  deployment: "Local builds naar Meta Quest 2 / Webhosting voor WebXR"
+
+# ---------------------------------------------------------------------------
+# KERNTAKEN EMPHASIS
+# ---------------------------------------------------------------------------
+
 kerntaken_emphasis:
-  P1-K1: "moderate"   # Planning via Scrum/Sprints in Project 3 #
-  P2-K1: "heavy"      # Designing (UX voor VR en 3D omgevingen) #
-  P3-K1: "heavy"      # Building (WebXR en Unity development) #
-  P4-K1: "moderate"   # Testing (Playtesting, iteratie en peer reviews) #
+  P1-K1: "moderate"   # Planning — PvE opstellen, plannen ontwerpproces
+  P2-K1: "heavy"      # Designing — VR/AR ontwerp, doelgroeponderzoek, presenteren aan klant
+  P3-K1: "heavy"      # Building — WebXR/Unity realisatie, fysieke interface integratie
+  P4-K1: "moderate"   # Testing — Zintuigelijke testplannen uitvoeren met hardware
 
-# --- Static Constraints (injected into CourseSpecification) -------------------
-grading_scale: "OVG" #
-hardware_constraints: "Ontwikkel-PC's geschikt voor Unity/VR-development vereist. Er moet worden gerouleerd met de 12 beschikbare Meta Quest 2 brillen in groepen van 2-3 studenten." #
+# ---------------------------------------------------------------------------
+# STATIC CONSTRAINTS
+# ---------------------------------------------------------------------------
 
-# --- Assessment --------------------------------------------------------------
+grading_scale: "OVG"
+hardware_constraints: "BYOD laptop (Windows/macOS) capabel voor Unity. Meta Quest 2 en Cardboards worden gefaciliteerd door GLR."
+
+# ---------------------------------------------------------------------------
+# ASSESSMENT PLAN
+# ---------------------------------------------------------------------------
+
 assessment:
-  practical_exams: 0 # Toetsing op basis van proces, interviews en presentaties #
-  portfolio_items: 3  # Project 1 (WebXR), Project 2 (Unity Prototype), Project 3 (VR Applicatie) #
-  proeve_preparation: true #
-  code_reviews_per_semester: 3 # Minimaal 1 uitgebreide code review per project/periode #
+  practical_exams: 1
+  portfolio_items: 2
+  proeve_preparation: true
+  code_reviews_per_semester: 2

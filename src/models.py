@@ -23,13 +23,13 @@ Public API
 * ``ModuleSummary`` — title, duration_weeks, topics.
 * ``CourseGraph`` — specification, course_slug, learning_objectives,
   key_concepts, prerequisites, modules, generated_at.
-* ``TierState`` — per-tier lab completion status for resume tracking.
-* ``GenerationState`` — full pipeline progress snapshot for --resume-from.
 """
 
 from __future__ import annotations
 
 import datetime
+from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -84,6 +84,14 @@ class CourseSpecification(BaseModel):
         description="Description of hardware/device constraints (e.g., BYOD, "
         "Chromebooks, thin clients).  When pre-populated from a profile, "
         "the Intake Specialist skips this question.",
+    )
+    material_language: Literal["Dutch", "English"] = Field(
+        default="Dutch",
+        description="The human language in which ALL instructional materials "
+        "(syllabi, theory, labs, READMEs, code comments, assessments) "
+        "will be written.  'Dutch' (Nederlands) or 'English'.  When "
+        "pre-populated from a profile, the Intake Specialist skips this "
+        "question.",
     )
 
 
@@ -211,6 +219,263 @@ class CourseGraph(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# ModalityType — Pedagogical modality enum for modality routing
+# ---------------------------------------------------------------------------
+
+
+class ModalityType(str, Enum):
+    """Pedagogical modality for content delivery.
+
+    Used by the deterministic modality router
+    (:mod:`src.evaluators.modality_router`) to route curriculum modules
+    to the appropriate content generator.
+
+    Values
+    ------
+    CLASSIC_READER
+        Traditional text/Markdown-based theory delivery.
+    INTERACTIVE_WEB
+        Browser-based interactive HTML/JS learning artifacts.
+    INTERACTIVE_CLI
+        Terminal-based interactive learning scripts.
+    VIDEO_AS_CODE
+        Deterministic React/Remotion video generation (VaC).
+    """
+
+    CLASSIC_READER = "classic_reader"
+    INTERACTIVE_WEB = "interactive_web"
+    INTERACTIVE_CLI = "interactive_cli"
+    VIDEO_AS_CODE = "video_as_code"
+
+
+# ---------------------------------------------------------------------------
+# ModalityDecision — deterministic routing output (System One)
+# ---------------------------------------------------------------------------
+
+
+class ModalityDecision(BaseModel):
+    """Typed routing decision for a curriculum module.
+
+    Each curriculum module receives exactly one ``ModalityDecision`` that the
+    swarm state machine reads to determine whether to invoke the Theory
+    Instructor (``CLASSIC_READER`` / ``INTERACTIVE_WEB`` / ``INTERACTIVE_CLI``)
+    or the Video Engineer (``VIDEO_AS_CODE``).
+
+    The decision is produced by
+    :func:`src.evaluators.modality_router.route_module` using the deterministic
+    System One model, **not** by an LLM.  The optional provenance fields
+    (``confidence``, ``probabilities``, ``model_version``) are populated from
+    the System One answer so callers can apply confidence-gated escalation
+    without parsing prose.
+    """
+
+    module_name: str = Field(
+        description="Human-readable module title the decision applies to.",
+        min_length=1,
+    )
+    modality: ModalityType = Field(
+        description="Selected pedagogical modality for this module.",
+    )
+    rationale: str = Field(
+        description="Pedagogical justification for the modality choice, emitted "
+        "deterministically from the typed decision — never generated prose.",
+        min_length=1,
+    )
+    complexity_score: float = Field(
+        description="Estimated complexity of the module (0.0 = trivial, 1.0 = very complex).",
+        ge=0.0,
+        le=1.0,
+    )
+    suggested_components: list[str] = Field(
+        default_factory=list,
+        description="Suggested visual/code components for the chosen modality.",
+    )
+    # ── System One provenance ──────────────────────────────────────────
+    confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="System One confidence in the selected modality (0.0–1.0). "
+        "``None`` when the decision came from a non-System-One source.",
+    )
+    probabilities: dict[str, float] = Field(
+        default_factory=dict,
+        description="Per-option probabilities returned by the System One "
+        "``choice`` primitive, keyed by modality value.",
+    )
+    model_version: str | None = Field(
+        default=None,
+        description="Version of the System One model that produced this decision.",
+    )
+    needs_review: bool = Field(
+        default=False,
+        description="True when confidence fell below the configured threshold "
+        "and the decision should be escalated for review.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# System One evaluation schemas — RubricCriterion / QAScore / SyllabusGateDecision
+# ---------------------------------------------------------------------------
+
+
+class RubricCriterion(BaseModel):
+    """A single scored dimension of an evaluation rubric.
+
+    The ordered ``levels`` list is passed verbatim to the System One ``score``
+    primitive (lowest level first) so the model rates an artifact against a
+    fixed, typed scale instead of inventing prose.
+    """
+
+    key: str = Field(description="Stable machine identifier (e.g. 'technical_correctness').")
+    label: str = Field(description="Human-readable criterion name.")
+    description: str = Field(description="What the criterion measures.")
+    levels: list[str] = Field(
+        min_length=2,
+        max_length=10,
+        description="Ordered rubric level descriptions, lowest first (2–10 levels).",
+    )
+    weight: float = Field(
+        default=1.0,
+        gt=0.0,
+        description="Relative weight when aggregating criterion scores.",
+    )
+
+
+class QAScore(BaseModel):
+    """Typed quality-assurance score for one generated artifact.
+
+    Produced by :func:`src.evaluators.qa_scorer.score_artifact`.  The
+    ``verdict`` is the authoritative pass/fail signal consumed by the
+    orchestrator — the generative LLM is never asked to judge.
+    """
+
+    content_ref: str = Field(
+        description="Stable reference to the scored artifact (file path or module id)."
+    )
+    score: float = Field(
+        description="Weighted mean of the per-criterion scores on the rubric scale.",
+    )
+    confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in the overall verdict (0.0–1.0).",
+    )
+    per_criterion: dict[str, float] = Field(
+        default_factory=dict,
+        description="Individual criterion scores keyed by RubricCriterion.key.",
+    )
+    verdict: Literal["pass", "needs_fixes"] = Field(
+        description="Authoritative pass/fail verdict.",
+    )
+    flags: list[str] = Field(
+        default_factory=list,
+        description="Stable machine identifiers for the issues found (never prose).",
+    )
+    model_version: str | None = Field(
+        default=None,
+        description="Version of the System One model that produced this score.",
+    )
+    needs_review: bool = Field(
+        default=False,
+        description="True when confidence fell below the configured threshold "
+        "and the score should be escalated to a human.",
+    )
+
+
+class SyllabusGateDecision(BaseModel):
+    """Typed completeness/quality gate for a generated syllabus.
+
+    Produced by :func:`src.evaluators.syllabus_gate.assess_syllabus`.  The
+    orchestrator advances the workflow **only** when ``complete`` is True.
+    Time-budget arithmetic is computed in plain Python — never by the model.
+    """
+
+    complete: bool = Field(
+        description="True when the syllabus is complete and coherent enough to advance.",
+    )
+    probability: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="System One ``noul`` probability that the syllabus is complete.",
+    )
+    confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in the quality score (0.0–1.0).",
+    )
+    quality_score: float | None = Field(
+        default=None,
+        description="Overall pedagogical quality score on the rubric scale.",
+    )
+    blockers: list[str] = Field(
+        default_factory=list,
+        description="Stable machine identifiers for the failing checks — consumed "
+        "by the orchestrator to schedule a targeted rewrite.",
+    )
+    model_version: str | None = Field(
+        default=None,
+        description="Version of the System One model that produced this gate.",
+    )
+    needs_review: bool = Field(
+        default=False,
+        description="True when the gate is uncertain and should be escalated to a human.",
+    )
+
+
+
+
+# ---------------------------------------------------------------------------
+# RemotionManifest — Deterministic VaC composition data
+# ---------------------------------------------------------------------------
+
+
+class RemotionManifest(BaseModel):
+    """Deterministic Video-as-Code composition descriptor.
+
+    Produced by the Video Engineer agent.  Contains all the structural
+    metadata needed to render a React/Remotion composition — scene
+    sequences, timing, and component hierarchy — without any narrative
+    prose or pixel-based media.
+    """
+
+    composition_id: str = Field(
+        description="Unique identifier for the Remotion composition (e.g. 'recursion_basics').",
+        min_length=1,
+    )
+    duration_in_frames: int = Field(
+        description="Total duration of the composition in frames.",
+        gt=0,
+    )
+    fps: int = Field(
+        default=30,
+        description="Frames per second for the composition.",
+        gt=0,
+    )
+    width: int = Field(
+        default=1920,
+        description="Canvas width in pixels.",
+        gt=0,
+    )
+    height: int = Field(
+        default=1080,
+        description="Canvas height in pixels.",
+        gt=0,
+    )
+    components: list[dict[str, object]] = Field(
+        default_factory=list,
+        description="Ordered list of scene/sequence descriptors.  Each dict "
+        "represents a React component with type, props, and optional children.",
+    )
+    module_name: str = Field(
+        description="The curriculum module this composition belongs to.",
+        min_length=1,
+    )
+
+
+# ---------------------------------------------------------------------------
 # GenerationState — tracks resume/restart progress
 # ---------------------------------------------------------------------------
 
@@ -263,4 +528,285 @@ class GenerationState(BaseModel):
     qa_review: str = Field(
         default="incomplete",
         description="QA review state: 'complete' or 'incomplete'.",
+    )
+    lesson_plan: dict[str, str] = Field(
+        default_factory=dict,
+        description="Per-module lesson plan generation state keyed by module name. "
+        "Values are 'complete', 'incomplete', or 'failed'.",
+    )
+    presentation: dict[str, str] = Field(
+        default_factory=dict,
+        description="Per-module presentation generation state keyed by module name. "
+        "Values are 'complete', 'incomplete', or 'failed'.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Lesson Plan & Presentation Artifacts (Issue #12 — Pedagogical Asset Pipeline)
+# ---------------------------------------------------------------------------
+
+
+class SessionBlock(BaseModel):
+    """A single teaching session within a lesson plan.
+
+    Represents one block of instruction (typically 45–90 minutes) with
+    learning objectives, activities, resources, differentiation, and
+    assessment checkpoints tailored for MBO4 vocational education.
+    """
+
+    session_number: int = Field(description="Sequential session number within the module.", ge=1)
+    title: str = Field(description="Descriptive title for this session.", min_length=1)
+    duration_minutes: int = Field(
+        description="Duration of this session in minutes.",
+        gt=0,
+    )
+    learning_objectives: list[str] = Field(
+        default_factory=list,
+        description="Specific learning objectives for this session.",
+    )
+    activities: list[str] = Field(
+        default_factory=list,
+        description="Ordered list of teaching and learning activities.",
+    )
+    resources: list[str] = Field(
+        default_factory=list,
+        description="Materials, tools, and equipment needed for this session.",
+    )
+    differentiation: str = Field(
+        default="",
+        description="Strategies for differentiating instruction for diverse learners.",
+    )
+    assessment: str = Field(
+        default="",
+        description="Formative or summative assessment approach for this session.",
+    )
+
+
+class LessonPlanManifest(BaseModel):
+    """A complete lesson plan for a single curriculum module.
+
+    Produced by the Instructional Coordinator agent.  Contains a session-by-session
+    breakdown with timing, differentiation, and assessment checkpoints suitable
+    for MBO4 vocational teachers.
+    """
+
+    module_name: str = Field(
+        description="The curriculum module this lesson plan belongs to.",
+        min_length=1,
+    )
+    sessions: list[SessionBlock] = Field(
+        default_factory=list,
+        description="Ordered list of teaching sessions for this module.",
+    )
+    total_duration_minutes: int = Field(
+        default=0,
+        description="Sum of all session durations in minutes.",
+        ge=0,
+    )
+    differentiation_strategies: list[str] = Field(
+        default_factory=list,
+        description="Global differentiation strategies applicable across all sessions.",
+    )
+    assessment_checkpoints: list[str] = Field(
+        default_factory=list,
+        description="Key assessment milestones across the module.",
+    )
+    materials_required: list[str] = Field(
+        default_factory=list,
+        description="All materials and equipment needed for the entire module.",
+    )
+    prerequisites: list[str] = Field(
+        default_factory=list,
+        description="Knowledge, skills, or resources required before starting this module.",
+    )
+
+
+class Slide(BaseModel):
+    """A single slide in a teacher presentation deck.
+
+    Used by the Presentation Designer to generate Marp Markdown slide decks
+    with structured content and speaker notes.
+    """
+
+    slide_number: int = Field(description="Position of this slide in the deck (1-based).", ge=0)
+    slide_type: str = Field(
+        description="Type of slide: 'title', 'bullets', 'code', 'diagram', 'activity', or 'summary'.",
+        min_length=1,
+    )
+    title: str = Field(description="Slide title / heading.", min_length=1)
+    content: str = Field(
+        default="",
+        description="Slide body content (bullets, code blocks, or descriptive text).",
+    )
+    speaker_notes: str = Field(
+        default="",
+        description="Speaker notes for the teacher delivering this slide.",
+    )
+    transition: str = Field(
+        default="",
+        description="Optional slide transition hint (e.g. 'fade', 'none').",
+    )
+
+
+class PresentationManifest(BaseModel):
+    """A teacher slide deck manifest for a single curriculum module.
+
+    Produced by the Presentation Designer agent.  Contains structured slide data
+    that can be rendered as Marp Markdown for teacher-led classroom presentations.
+    """
+
+    module_name: str = Field(
+        description="The curriculum module this presentation belongs to.",
+        min_length=1,
+    )
+    slides: list[Slide] = Field(
+        default_factory=list,
+        description="Ordered list of slides in the presentation deck.",
+    )
+    total_estimated_minutes: int = Field(
+        default=0,
+        description="Estimated total delivery time in minutes.",
+        ge=0,
+    )
+    marp_frontmatter: dict[str, str] = Field(
+        default_factory=dict,
+        description="Marp Markdown frontmatter configuration "
+        "(e.g. theme, paginate, size, backgroundColor).",
+    )
+
+
+# ---------------------------------------------------------------------------
+# DesignSystem — GLR Media Creative Design Tokens
+# ---------------------------------------------------------------------------
+# Parsed from DESIGN.md YAML frontmatter.  Provides type-safe access to
+# all color, typography, spacing, and component tokens that agents use
+# to embed the GLR brand into generated materials.
+
+
+class DesignColorTokens(BaseModel):
+    """All color tokens defined in the DESIGN.md YAML frontmatter."""
+
+    surface: str = "#faf9fd"
+    surface_dim: str = "#dbd9dd"
+    surface_bright: str = "#faf9fd"
+    surface_container_lowest: str = "#ffffff"
+    surface_container_low: str = "#f5f3f7"
+    surface_container: str = "#efedf1"
+    surface_container_high: str = "#e9e7ec"
+    surface_container_highest: str = "#e3e2e6"
+    on_surface: str = "#1b1b1f"
+    on_surface_variant: str = "#424936"
+    inverse_surface: str = "#2f3034"
+    inverse_on_surface: str = "#f2f0f4"
+    outline: str = "#727a64"
+    outline_variant: str = "#c2cab1"
+    surface_tint: str = "#416900"
+    primary: str = "#416900"
+    on_primary: str = "#ffffff"
+    primary_container: str = "#76b800"
+    on_primary_container: str = "#284300"
+    inverse_primary: str = "#95da32"
+    secondary: str = "#5f5e5e"
+    on_secondary: str = "#ffffff"
+    secondary_container: str = "#e5e2e1"
+    on_secondary_container: str = "#656464"
+    tertiary: str = "#2540ff"
+    on_tertiary: str = "#ffffff"
+    tertiary_container: str = "#939fff"
+    on_tertiary_container: str = "#001dbb"
+    error: str = "#ba1a1a"
+    on_error: str = "#ffffff"
+    error_container: str = "#ffdad6"
+    on_error_container: str = "#93000a"
+    primary_fixed: str = "#aff74e"
+    primary_fixed_dim: str = "#95da32"
+    on_primary_fixed: str = "#102000"
+    on_primary_fixed_variant: str = "#304f00"
+    secondary_fixed: str = "#e5e2e1"
+    secondary_fixed_dim: str = "#c8c6c5"
+    on_secondary_fixed: str = "#1c1b1b"
+    on_secondary_fixed_variant: str = "#474646"
+    tertiary_fixed: str = "#dfe0ff"
+    tertiary_fixed_dim: str = "#bcc2ff"
+    on_tertiary_fixed: str = "#000a63"
+    on_tertiary_fixed_variant: str = "#0023d9"
+    background: str = "#faf9fd"
+    on_background: str = "#1b1b1f"
+    surface_variant: str = "#e3e2e6"
+    electric_lime: str = "#A6E22E"
+    pure_black: str = "#000000"
+    pure_white: str = "#FFFFFF"
+    surface_subtle: str = "#F4F4F6"
+    border_structural: str = "#E5E7EB"
+    accent_ultramarine: str = "#002BFF"
+
+
+class TypographyToken(BaseModel):
+    """A single typography style definition."""
+
+    fontFamily: str = "Space Grotesk"
+    fontSize: str = "16px"
+    fontWeight: str = "400"
+    lineHeight: str = "24px"
+    letterSpacing: str = "0em"
+
+
+class DesignTypographyScale(BaseModel):
+    """All typography styles defined in DESIGN.md."""
+
+    display_xl: TypographyToken = Field(default_factory=TypographyToken)
+    display_xl_mobile: TypographyToken = Field(default_factory=TypographyToken)
+    headline_lg: TypographyToken = Field(default_factory=TypographyToken)
+    headline_lg_mobile: TypographyToken = Field(default_factory=TypographyToken)
+    headline_md: TypographyToken = Field(default_factory=TypographyToken)
+    headline_sm: TypographyToken = Field(default_factory=TypographyToken)
+    title_md: TypographyToken = Field(default_factory=TypographyToken)
+    body_lg: TypographyToken = Field(default_factory=TypographyToken)
+    body_md: TypographyToken = Field(default_factory=TypographyToken)
+    body_sm: TypographyToken = Field(default_factory=TypographyToken)
+    label_lg: TypographyToken = Field(default_factory=TypographyToken)
+    label_md: TypographyToken = Field(default_factory=TypographyToken)
+    label_code: TypographyToken = Field(default_factory=TypographyToken)
+
+
+class DesignSpacingTokens(BaseModel):
+    """Spacing / layout tokens from DESIGN.md."""
+
+    gutter: str = "1.5rem"
+    gutter_mobile: str = "1rem"
+    margin: str = "3rem"
+    margin_mobile: str = "1.25rem"
+    space_xs: str = "0.25rem"
+    space_sm: str = "0.5rem"
+    space_md: str = "1rem"
+    space_lg: str = "1.5rem"
+    space_xl: str = "2.5rem"
+
+
+class DesignSystem(BaseModel):
+    """Top-level container for the complete GLR Media Creative design system.
+
+    Parsed from ``DESIGN.md`` and used as the single source of truth for
+    all design tokens referenced by agents during material generation.
+    """
+
+    name: str = Field(default="GLR Media Creative", description="Design system name.")
+    brand_statement: str = Field(
+        default="",
+        description="Narrative description of the brand identity, movement, and tone.",
+    )
+    design_movement: str = Field(
+        default="",
+        description="The design movement label (e.g. 'High-Contrast Brutalist Modernism').",
+    )
+    colors: DesignColorTokens = Field(default_factory=DesignColorTokens)
+    typography: DesignTypographyScale = Field(default_factory=DesignTypographyScale)
+    spacing: DesignSpacingTokens = Field(default_factory=DesignSpacingTokens)
+    shapes_border_radius: str = Field(
+        default="0px",
+        description="All UI surfaces use sharp 0px border-radius.",
+    )
+    depth_style: str = Field(
+        default="crisp-architectural",
+        description="Depth is achieved via structural borders and hard offset shadows, not blur.",
     )

@@ -36,6 +36,19 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+
+# The project targets Python 3.12+ and relies on stdlib features that did not
+# exist in earlier releases (e.g. ``datetime.UTC``, PEP 604 unions).  Fail fast
+# with a clear message instead of an opaque ``ImportError`` when an older
+# interpreter is used.  This check MUST precede the ``from datetime import UTC``
+# import below, otherwise Python 3.9 would raise that ImportError first.
+if sys.version_info < (3, 12):
+    raise SystemExit(
+        "syllabus-swarm requires Python 3.12+ "
+        f"(running {'.'.join(map(str, sys.version_info[:3]))}).\n"
+        "Activate the project .venv or run with `python3.12`."
+    )
+
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -48,7 +61,6 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-import yaml
 from dotenv import load_dotenv
 
 # Load environment variables *before* any internal imports that read them.
@@ -60,6 +72,7 @@ from src.agents.intake_specialist import get_intake_specialist
 from src.crews.syllabus_crew import (
     OUTPUT_ROOT,
     CrewResult,
+    FatalLLMError,
     generate_run_id,
     run_syllabus_crew,
 )
@@ -118,6 +131,20 @@ def build_cli_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--skip-lesson-plans",
+        action="store_true",
+        default=False,
+        help="Skip lesson plan generation.",
+    )
+
+    parser.add_argument(
+        "--skip-presentations",
+        action="store_true",
+        default=False,
+        help="Skip presentation (slide deck) generation.",
+    )
+
+    parser.add_argument(
         "--profile",
         default=None,
         metavar="PATH",
@@ -162,7 +189,55 @@ def build_cli_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    parser.add_argument(
+        "--material-language",
+        default=None,
+        choices=["Dutch", "English"],
+        metavar="LANG",
+        help=(
+            "Language for ALL instructional materials: 'Dutch' (Nederlands) "
+            "or 'English'.  Overrides profile and school defaults.  "
+            "Default: Dutch."
+        ),
+    )
+
     return parser
+
+
+# ---------------------------------------------------------------------------
+# HITL Feedback Prompt (Issue #7)
+# ---------------------------------------------------------------------------
+
+
+def prompt_for_feedback() -> tuple[str, str | None]:
+    """Prompt the user for approval or feedback after a generation cycle.
+
+    Returns
+    -------
+    tuple[str, str | None]
+        A ``(action, feedback_text)`` pair where:
+        - ``action`` is one of ``"APPROVE"``, ``"QUIT"``, or ``"FEEDBACK"``
+        - ``feedback_text`` is the user's critique when action is ``"FEEDBACK"``,
+          ``None`` otherwise.
+    """
+    print()
+    print("─" * 60)
+    print("  🐝  Syllabus Swarm — Generation Complete")
+    print("─" * 60)
+    print()
+    print("  [A] Approve — finalise and export")
+    print("  [Q] Quit — discard and exit")
+    print("  [any other text] — provide feedback for re-generation")
+    print()
+
+    user_input = input("  Your choice: ").strip()
+
+    if user_input.upper() == "A":
+        return ("APPROVE", None)
+    elif user_input.upper() == "Q":
+        return ("QUIT", None)
+    else:
+        return ("FEEDBACK", user_input)
 
 
 # ---------------------------------------------------------------------------
@@ -200,215 +275,106 @@ def _validate_name(name: str) -> str:
     return name
 
 
-# ---------------------------------------------------------------------------
-# Profile loading
-# ---------------------------------------------------------------------------
+def _validate_resume_dir(resume_dir: str) -> Path:
+    """Validate a ``--resume-from`` path and return it as a resolved ``Path``.
 
-
-def _load_profile(path: str) -> dict:
-    """Load and validate a YAML cohort profile file.
+    ``--resume-from`` must point at a previous **run directory** (e.g.
+    ``output/2026-08-27_091745_Javascript_OOP``) containing a ``syllabus/``
+    subdirectory with at least one ``.md`` file.  Failing fast here — before
+    the crew is built — prevents the confusing cascade that otherwise occurs
+    when a file (such as ``intake_session.json``) is passed by mistake.
 
     Parameters
     ----------
-    path : str
-        Path to a ``.yaml`` / ``.yml`` cohort profile file.
+    resume_dir : str
+        The value of the ``--resume-from`` CLI flag.
 
     Returns
     -------
-    dict
-        The parsed YAML contents as a dictionary.
+    Path
+        The resolved, validated run directory.
 
     Raises
     ------
     SystemExit
-        If the file does not exist, cannot be read, or is not valid YAML.
+        If the path does not exist, is not a directory, or lacks a usable
+        ``syllabus/`` subdirectory.
     """
-    profile_path = Path(path)
-    if not profile_path.is_absolute():
-        # Resolve relative paths against the project root
-        profile_path = _PROJECT_ROOT / profile_path
+    resume_path = Path(resume_dir)
+    if not resume_path.is_absolute():
+        resume_path = _PROJECT_ROOT / resume_path
 
-    if not profile_path.exists():
+    if not resume_path.exists():
         print(
-            f"❌ Profile not found: {profile_path}",
+            f"❌ --resume-from directory not found: {resume_path}",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    if profile_path.suffix.lower() not in (".yaml", ".yml"):
+    if not resume_path.is_dir():
+        hint = ""
+        if resume_path.suffix.lower() == ".json":
+            hint = (
+                "\n   → This looks like a session file. Use --load-session for a "
+                "saved intake session, or pass the run *directory* (e.g. "
+                "output/<run_id>/) for --resume-from."
+            )
         print(
-            f"❌ Profile must be a .yaml or .yml file, got: {profile_path.suffix}",
+            f"❌ --resume-from must be a run directory, not a file: {resume_path}{hint}",
             file=sys.stderr,
         )
         sys.exit(1)
 
+    syllabus_subdir = resume_path / "syllabus"
+    if not syllabus_subdir.is_dir() or not list(syllabus_subdir.glob("*.md")):
+        print(
+            f"❌ No 'syllabus/' subdirectory with a .md file found in run directory: {resume_path}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return resume_path
+
+
+# ---------------------------------------------------------------------------
+# Profile loading — delegated to Layer 1 (src.config_loader)
+# ---------------------------------------------------------------------------
+from src.config_loader import (
+    _build_profile_context_string as _build_profile_context_impl,
+)
+from src.config_loader import (
+    get_pre_populated_fields as _get_pre_populated_fields_impl,
+)
+from src.config_loader import (
+    inject_profile as _inject_profile_impl,
+)
+from src.config_loader import (
+    load_profile as _load_profile_impl,
+)
+
+
+def _load_profile(path: str) -> dict:
+    """Load and validate a YAML cohort profile file (→ Layer 1)."""
     try:
-        with open(profile_path, encoding="utf-8") as fh:
-            data = yaml.safe_load(fh)
-    except yaml.YAMLError as exc:
-        print(f"❌ Invalid YAML in profile: {exc}", file=sys.stderr)
+        return _load_profile_impl(path)
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        print(f"❌ {exc}", file=sys.stderr)
         sys.exit(1)
-    except OSError as exc:
-        print(f"❌ Cannot read profile: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    if not isinstance(data, dict):
-        print("❌ Profile YAML must be a mapping (dict) at the root.", file=sys.stderr)
-        sys.exit(1)
-
-    return data
 
 
 def _build_profile_context_string(profile: dict) -> str:
-    """Serialize all profile sections into a structured text block.
-
-    This ensures that schedule, assessment, kerntaken emphasis, tech stack,
-    and other profile data reach the agents via the ``course_context``
-    string, without requiring changes to the ``CourseSpecification`` model.
-
-    Parameters
-    ----------
-    profile : dict
-        Parsed YAML profile dictionary.
-
-    Returns
-    -------
-    str
-        A structured plain-text block suitable for injection into the
-        Intake Specialist synthesis prompt.
-    """
-    parts: list[str] = []
-
-    # --- Profile metadata ---
-    prof = profile.get("profile", {})
-    if prof:
-        name = prof.get("name", "")
-        desc = prof.get("description", "")
-        if name:
-            parts.append(f"Cohort: {name}")
-        if desc:
-            parts.append(f"Cohort Description: {desc.strip()}")
-
-    # --- BPV readiness ---
-    bpv = profile.get("bpv_readiness")
-    if bpv:
-        parts.append(f"BPV Readiness: {bpv}")
-
-    # --- Tech stack ---
-    tech = profile.get("tech_stack", {})
-    if tech:
-        lines = ["Tech Stack:"]
-        for key in (
-            "primary_language",
-            "framework",
-            "frontend",
-            "database",
-            "version_control",
-            "editor",
-            "ci_cd",
-            "containerisation",
-            "deployment",
-        ):
-            val = tech.get(key)
-            if val:
-                lines.append(f"  - {key}: {val}")
-        testing = tech.get("testing", {})
-        if testing:
-            tf = testing.get("framework", "")
-            tc = testing.get("coverage_target", "")
-            if tf:
-                lines.append(f"  - testing_framework: {tf}")
-            if tc:
-                lines.append(f"  - testing_coverage_target: {tc}")
-        parts.append("\n".join(lines))
-
-    # --- Kerntaken emphasis ---
-    ke = profile.get("kerntaken_emphasis", {})
-    if ke:
-        lines = ["Kerntaken Emphasis:"]
-        for kt in ("P1-K1", "P2-K1", "P3-K1", "P4-K1"):
-            val = ke.get(kt)
-            if val:
-                lines.append(f"  - {kt}: {val}")
-        parts.append("\n".join(lines))
-
-    # --- Assessment ---
-    assess = profile.get("assessment", {})
-    if assess:
-        lines = ["Assessment:"]
-        for key in (
-            "practical_exams",
-            "portfolio_items",
-            "proeve_preparation",
-            "code_reviews_per_semester",
-        ):
-            val = assess.get(key)
-            if val is not None:
-                lines.append(f"  - {key}: {val}")
-        parts.append("\n".join(lines))
-
-    return "\n\n".join(parts)
+    """Serialize all profile sections (→ Layer 1)."""
+    return _build_profile_context_impl(profile)
 
 
 def _inject_profile(spec: CourseSpecification, profile: dict) -> CourseSpecification:
-    """Inject pre-populated profile values into the CourseSpecification model.
-
-    Only sets a field when the profile explicitly provides a non-None value
-    for it AND the model field is currently None.  This means the Intake
-    Specialist can still set missing fields via the LLM interview.
-
-    Additionally, serializes the full profile into ``course_context`` so
-    that schedule, assessment, kerntaken emphasis, and tech stack data
-    reach the downstream agents without model changes.
-
-    Parameters
-    ----------
-    spec : CourseSpecification
-        The (typically empty or partially-filled) course specification.
-    profile : dict
-        Parsed YAML profile dictionary.
-
-    Returns
-    -------
-    CourseSpecification
-        The specification with profile values injected (in-place).
-    """
-    # Top-level profile fields that map directly to CourseSpecification
-    for key in ("grading_scale", "student_pathway", "year_level", "hardware_constraints"):
-        if key in profile and profile[key] is not None:
-            current = getattr(spec, key)
-            if current is None:
-                setattr(spec, key, profile[key])
-
-    # Also inject primary_language from tech_stack if present
-    if (
-        spec.primary_language == ""
-        or spec.primary_language == "Python"  # default fallback when profile exists
-    ):
-        tech = profile.get("tech_stack", {})
-        pl = tech.get("primary_language")
-        if pl:
-            spec.primary_language = pl
-
-    # Serialize the full profile into course_context so schedule,
-    # assessment, kerntaken, and tech stack data reach the agents.
-    profile_context = _build_profile_context_string(profile)
-    if profile_context:
-        if spec.course_context:
-            spec.course_context = profile_context + "\n\n" + spec.course_context
-        else:
-            spec.course_context = profile_context
-
-    return spec
+    """Inject pre-populated profile values (→ Layer 1)."""
+    return _inject_profile_impl(spec, profile)
 
 
 def _get_pre_populated_fields(spec: CourseSpecification) -> list[str]:
-    """Return a list of field names that are pre-populated (non-None)."""
-    fields: list[str] = []
-    for key in ("grading_scale", "student_pathway", "year_level", "hardware_constraints"):
-        if getattr(spec, key) is not None:
-            fields.append(key)
-    return fields
+    """Return pre-populated field names (→ Layer 1)."""
+    return _get_pre_populated_fields_impl(spec)
 
 
 # ---------------------------------------------------------------------------
@@ -522,7 +488,8 @@ def _run_intake(
     verbose: bool = False,
     pre_populated: CourseSpecification | None = None,
     prerequisites: str | None = None,
-) -> tuple[str, str, str, str, str | None, str | None, int | None, str | None]:
+    material_language_override: str | None = None,
+) -> tuple[str, str, str, str, str | None, str | None, int | None, str | None, str]:
     """Run the Intake Specialist to gather rich course context.
 
     Steps:
@@ -541,21 +508,24 @@ def _run_intake(
     pre_populated : CourseSpecification or None
         Pre-populated constraints from a cohort profile.  When provided,
         structured fields (grading_scale, student_pathway, year_level,
-        hardware_constraints) are used as fallback values if the LLM
-        synthesis does not populate them.
+        hardware_constraints, material_language) are used as fallback values
+        if the LLM synthesis does not populate them.
     prerequisites : str or None
         Optional prerequisite context from a previous course (via
         ``--builds-upon``).  When provided, injected into the question
         prompt so the Intake Specialist knows what students have already
         mastered and can tailor questions accordingly.
+    material_language_override : str or None
+        Explicit material language from CLI ``--material-language`` flag.
+        Takes highest priority over profile defaults and LLM output.
 
     Returns
     -------
-    tuple[str, str, str, str, str | None, str | None, int | None, str | None]
+    tuple[str, str, str, str, str | None, str | None, int | None, str | None, str]
         A ``(course_context, primary_language, questions, answers,
-        grading_scale, student_pathway, year_level, hardware_constraints)``
-        tuple.  *questions* and *answers* are empty strings when the
-        intake failed (e.g. LLM error, no user input).
+        grading_scale, student_pathway, year_level, hardware_constraints,
+        material_language)`` tuple.  *questions* and *answers* are empty
+        strings when the intake failed (e.g. LLM error, no user input).
     """
     intake_agent = get_intake_specialist(verbose=verbose)
 
@@ -570,6 +540,7 @@ def _run_intake(
         )
 
     # ── Build profile context for the question prompt ──────────────────
+# ── Apply material_language_override (CLI flag takes highest priority) ─\n    if material_language_override:\n        if pre_populated is None:\n            pre_populated = CourseSpecification(\n                course_context=\"\", primary_language=\"\"\n            )\n        pre_populated.material_language = material_language_override\n\n    # ── Build profile context for the question prompt ──────────────────
     skip_section = ""
     if pre_populated is not None:
         filled = _get_pre_populated_fields(pre_populated)
@@ -580,6 +551,7 @@ def _run_intake(
                 "student_pathway": "student pathway (BOL/BBL)",
                 "year_level": "year level",
                 "hardware_constraints": "hardware constraints",
+                "material_language": "material language (Dutch/English)",
             }
             for field in filled:
                 label = labels.get(field, field)
@@ -594,6 +566,12 @@ def _run_intake(
         if pre_populated.primary_language and pre_populated.primary_language not in ("", "Python"):
             skip_section += (
                 f"\n     • primary language: **{pre_populated.primary_language}** "
+                f"(pre-populated — skip)\n"
+            )
+# Also note material_language if pre-populated or overridden
+        if pre_populated.material_language and pre_populated.material_language != "Dutch":
+            skip_section += (
+                f"\n     • material language: **{pre_populated.material_language}** "
                 f"(pre-populated — skip)\n"
             )
 
@@ -614,6 +592,9 @@ def _run_intake(
             f"4. The specific schedule and time budget (number of weeks, "
             f"contact hours per week, self-study hours, and any known "
             f"disruptions like holidays or school trips)\n\n"
+            f"5. The preferred language for ALL instructional materials: "
+            f"Dutch (Nederlands) or English.  This affects the syllabus, "
+            f"theory artifacts, lab READMEs, code comments, and assessments.\n\n"
             f"{skip_section}\n"
             f"Output ONLY the questions — no preamble, no commentary, "
             f"no markdown formatting.  Number them 1, 2, 3, 4.  Keep each "
@@ -644,7 +625,7 @@ def _run_intake(
     except Exception as exc:
         print(f"\n⚠️  Intake Specialist failed to generate questions: {exc}")
         print("   Proceeding with bare course name as context.\n")
-        return f"Course Name: {course_name}", "Python", "", "", None, None, None, None
+        return f"Course Name: {course_name}", "Python", "", "", None, None, None, None, "Dutch"
 
     # ── Step 2: Display questions and capture answers ────────────────────
     if pre_populated is not None and _get_pre_populated_fields(pre_populated):
@@ -677,7 +658,7 @@ def _run_intake(
 
     if not user_answers:
         print("\n⚠️  No answers provided. Proceeding with bare course name.\n")
-        return f"Course Name: {course_name}", "Python", "", "", None, None, None, None
+        return f"Course Name: {course_name}", "Python", "", "", None, None, None, None, "Dutch"
 
     # ── Step 3: Synthesise course context ────────────────────────────────
     # Include pre-populated fields AND the full profile context in the
@@ -719,7 +700,7 @@ def _run_intake(
             f"{pre_pop_bonus}\n\n"
             f"Your task: Synthesise the course name, your questions, and "
             f"the user's answers into a structured ``CourseSpecification`` "
-            f"object with two fields:\n\n"
+            f"object with three fields:\n\n"
             f"1. ``course_context`` — A rich, structured text block "
             f"(plain text, NOT Markdown) containing:\n"
             f"   - The course name and a one-sentence summary\n"
@@ -740,10 +721,11 @@ def _run_intake(
             f"linters, and tooling used in the coding labs."
         ),
         expected_output=(
-            "A CourseSpecification object with two fields: "
-            "course_context (rich pedagogical context as plain text) and "
+            "A CourseSpecification object with three fields: "
+            "course_context (rich pedagogical context as plain text), "
             "primary_language (the exact programming language for labs, "
-            "e.g. 'JavaScript', 'Python')."
+            "e.g. 'JavaScript', 'Python'), and "
+            "material_language ('Dutch' or 'English')."
         ),
         output_pydantic=CourseSpecification,
         agent=intake_agent,
@@ -770,6 +752,7 @@ def _run_intake(
             student_pathway = spec.student_pathway
             year_level = spec.year_level
             hardware_constraints = spec.hardware_constraints
+            material_language = spec.material_language
         else:
             # Fallback: parse from raw text if pydantic output unavailable.
             course_context = (
@@ -780,6 +763,7 @@ def _run_intake(
             student_pathway = None
             year_level = None
             hardware_constraints = None
+            material_language = "Dutch"
 
         # Fall back to pre-populated values when the LLM didn't populate them.
         if pre_populated is not None:
@@ -791,10 +775,15 @@ def _run_intake(
                 year_level = pre_populated.year_level
             if hardware_constraints is None:
                 hardware_constraints = pre_populated.hardware_constraints
+            if material_language not in ("Dutch", "English"):
+                if pre_populated is not None and pre_populated.material_language:
+                    material_language = pre_populated.material_language
+                else:
+                    material_language = "Dutch"
 
         if not course_context:
             print("⚠️  Synthesis produced no output. Using bare course name.\n")
-            return f"Course Name: {course_name}", "Python", "", "", None, None, None, None
+            return f"Course Name: {course_name}", "Python", "", "", None, None, None, None, "Dutch"
 
         print(f"{'─' * 60}")
         print("📋  Course Context (sent to Curriculum Architect):")
@@ -812,12 +801,13 @@ def _run_intake(
             student_pathway,
             year_level,
             hardware_constraints,
+            material_language,
         )
 
     except Exception as exc:
         print(f"\n⚠️  Synthesis failed: {exc}")
         print("   Proceeding with bare course name as context.\n")
-        return f"Course Name: {course_name}", "Python", "", "", None, None, None, None
+        return f"Course Name: {course_name}", "Python", "", "", None, None, None, None, "Dutch"
 
 
 # ---------------------------------------------------------------------------
@@ -825,25 +815,88 @@ def _run_intake(
 # ---------------------------------------------------------------------------
 
 
+def _exit_on_fatal_llm_error(exc: FatalLLMError) -> None:
+    """Report a fail-fast LLM abort and exit with a dedicated code.
+
+    Exit codes
+    ----------
+    2  reserved for API-key / authentication problems (see the RuntimeError
+       handler below).
+    3  reserved for unexpected errors.
+    4  futile LLM failure — the run was aborted deliberately to avoid
+       burning credits on calls that cannot succeed.
+    """
+    print(f"\n❌  Fatal LLM Error: {exc}", file=sys.stderr)
+    print(
+        "\n   The model cannot produce output for the current configuration, so\n"
+        "   the run was stopped before any further API credits were spent.\n"
+        "   Fix the .env entries listed above, then re-run.\n",
+        file=sys.stderr,
+    )
+    sys.exit(4)
+
+
+def _exit_on_aborted_run(result: CrewResult) -> None:
+    """Report an aborted (partial) run and exit without prompting for feedback.
+
+    A futile LLM failure means another HITL iteration would fail identically,
+    so asking the operator for feedback would waste their time.
+    """
+    print(
+        "\n  ⛔  Run aborted early — a futile LLM failure was detected and the\n"
+        "      remaining stages were skipped to avoid burning credits.\n"
+        "      Fix the .env entries listed above, then re-run.\n",
+        file=sys.stderr,
+    )
+    sys.exit(4)
+
+
 def _maybe_print_iter_hint(error_text: str) -> None:
-    """If *error_text* contains an iteration-exhaustion marker, print a
-    compact hint telling the operator which env var to tweak.
+    """If *error_text* contains a known failure marker, print a compact hint.
+
+    Covers two distinct failure modes:
+
+    * **Iteration exhaustion** — ``"Maximum iterations reached"``; the fix is
+      a higher ``AGENT_{ROLE}_MAX_ITER``.
+    * **Empty LLM response** — the model returned NULL/empty content because
+      its reasoning budget was consumed; the fix is a higher
+      ``AGENT_{ROLE}_MAX_TOKENS`` and/or a more reliable model.
 
     The heavy lifting (full annotated message) is done in
-    :func:`src.crews.syllabus_crew._annotate_iter_exhaustion`.  This
+    :func:`src.crews.syllabus_crew._annotate_iter_exhaustion` and
+    :func:`src.crews.syllabus_crew._annotate_empty_llm_response`.  This
     function provides a quick, non-intrusive reminder at the end of the
     results summary.
     """
-    if "Maximum iterations reached" not in error_text:
-        return
-
-    # Extract the env-var name if present (inserted by _annotate_iter_exhaustion).
     import re
 
-    match = re.search(r"AGENT_(\w+)_MAX_ITER", error_text)
-    if match:
-        agent = match.group(1)
-        print(f"      💡  Try: export AGENT_{agent}_MAX_ITER=<higher_value>")
+    # ── Iteration exhaustion ──────────────────────────────────────────────
+    if "Maximum iterations reached" in error_text:
+        match = re.search(r"AGENT_(\w+)_MAX_ITER", error_text)
+        if match:
+            agent = match.group(1)
+            print(f"      💡  Try: export AGENT_{agent}_MAX_ITER=<higher_value>")
+
+    # ── Empty / NULL LLM response (reasoning budget exhausted) ────────────
+    empty_markers = (
+        "EMPTY LLM RESPONSE DETECTED",
+        "Invalid response from LLM call - None or empty",
+        "Received None or empty response from LLM call",
+        "returned None/empty content",
+    )
+    if any(marker in error_text for marker in empty_markers):
+        match = re.search(r"AGENT_(\w+)_MAX_TOKENS", error_text)
+        if match:
+            agent = match.group(1)
+            print(
+                f"      💡  Try: export AGENT_{agent}_MAX_TOKENS=16384 "
+                f"(or switch AGENT_{agent}_MODEL)"
+            )
+        else:
+            print(
+                "      💡  Empty LLM response — raise the agent's max_tokens "
+                "budget (or switch to a more reliable model) in .env."
+            )
 
 
 def _print_summary(result: CrewResult, course_name: str) -> None:
@@ -852,6 +905,13 @@ def _print_summary(result: CrewResult, course_name: str) -> None:
     print("  🐝  Syllabus Swarm — Results Summary")
     print(f"  Course: {course_name}")
     print(f"{'=' * 60}")
+
+    # ── Fail-fast abort notice ──────────────
+    if result.aborted:
+        print()
+        print("  ⛔  RUN ABORTED EARLY — FUTILE LLM FAILURE")
+        if result.abort_reason:
+            print(f"      ↳ {result.abort_reason}")
 
     # ── Syllabus Agent ──────────────────────
     print()
@@ -1029,10 +1089,13 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     skip_labs: bool = args.skip_labs
+    skip_lesson_plans: bool = args.skip_lesson_plans
+    skip_presentations: bool = args.skip_presentations
     resume_dir: str | None = args.resume_from
     profile_path: str | None = args.profile
     load_session_path: str | None = args.load_session
     builds_upon: str | None = args.builds_upon
+    material_language_cli: str | None = args.material_language
 
     # Collapse the positional course_name list into a single string.
     parsed_course_name: str | None = (
@@ -1055,6 +1118,10 @@ def main(argv: list[str] | None = None) -> None:
         )
         sys.exit(1)
 
+    # --- 1b. Validate --resume-from before any heavy work ------------------
+    if resume_dir:
+        resume_dir = str(_validate_resume_dir(resume_dir))
+
     # --- 2. Load profile if provided --------------------------------------
     profile_data: dict | None = None
     pre_populated: CourseSpecification | None = None
@@ -1072,6 +1139,8 @@ def main(argv: list[str] | None = None) -> None:
             print(f"    Pre-populated: {', '.join(filled)}")
         if pre_populated.primary_language and pre_populated.primary_language not in ("", "Python"):
             print(f"    Primary language: {pre_populated.primary_language}")
+        if pre_populated.material_language:
+            print(f"    Material language: {pre_populated.material_language}")
 
     # --- 1a. --load-session path (bypass interactive intake) -------------
 
@@ -1097,12 +1166,17 @@ def main(argv: list[str] | None = None) -> None:
         course_name = session.course_name
         course_context = session.course_specification.course_context
         primary_language = session.course_specification.primary_language
+        material_language = getattr(
+            session.course_specification, "material_language", "Dutch"
+        )
 
         print(f"\n{'=' * 60}")
         print("  🐝  Syllabus Swarm")
         print(f"  Course:     {course_name}")
         print("  Model:      Per-agent via OpenRouter (see .env.example)")
         print(f"  Labs:       {'Skip' if skip_labs else 'Generate'}")
+        print(f"  Lesson Plans: {'Skip' if skip_lesson_plans else 'Generate'}")
+        print(f"  Presentations: {'Skip' if skip_presentations else 'Generate'}")
         print(f"{'=' * 60}\n")
 
         print("📋  Loaded intake session:")
@@ -1122,32 +1196,58 @@ def main(argv: list[str] | None = None) -> None:
 
         # Generate a fresh run_id for this pipeline run.
         safe_name = _sanitize_filename(course_name)
-        run_id = generate_run_id(safe_name)
 
-        # --- 2. Run the crew ---------------------------------------------
-        try:
-            result = run_syllabus_crew(
-                course_context,
-                course_name=course_name,
-                primary_language=primary_language,
-                verbose=True,
-                skip_labs=skip_labs,
-                run_id=run_id,
-            )
-        except RuntimeError as exc:
-            print(f"\n❌  Fatal Runtime Error: {exc}", file=sys.stderr)
-            print(
-                "   → Check that OPENROUTER_API_KEY is set in .env.",
-                file=sys.stderr,
-            )
-            sys.exit(2)
-        except Exception as exc:
-            print(f"\n❌  Fatal Unexpected Error: {exc}", file=sys.stderr)
-            sys.exit(3)
+        # ── HITL Feedback Loop ─────────────────────────────────────────
+        human_feedback: str | None = None
+        while True:
+            # Each feedback iteration gets a NEW run_id for version preservation
+            run_id = generate_run_id(safe_name)
+            run_dir = OUTPUT_ROOT / run_id
+            run_dir.mkdir(parents=True, exist_ok=True)
 
-        # --- 3. Print summary --------------------------------------------
-        _print_summary(result, course_name)
-        return
+            try:
+                result = run_syllabus_crew(
+                    course_context,
+                    course_name=course_name,
+                    primary_language=primary_language,
+                    material_language=material_language,
+                    verbose=True,
+                    skip_labs=skip_labs,
+                    skip_lesson_plans=skip_lesson_plans,
+                    skip_presentations=skip_presentations,
+                    human_feedback=human_feedback,
+                    run_id=run_id,
+                )
+            except FatalLLMError as exc:
+                _exit_on_fatal_llm_error(exc)
+            except RuntimeError as exc:
+                print(f"\n❌  Fatal Runtime Error: {exc}", file=sys.stderr)
+                print(
+                    "   → Check that OPENROUTER_API_KEY is set in .env.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            except Exception as exc:
+                print(f"\n❌  Fatal Unexpected Error: {exc}", file=sys.stderr)
+                sys.exit(3)
+
+            # A futile LLM failure aborts the run deliberately: never prompt for
+            # feedback, because another iteration would fail identically.
+            if result.aborted:
+                _print_summary(result, course_name)
+                _exit_on_aborted_run(result)
+
+            action, feedback_text = prompt_for_feedback()
+            if action == "APPROVE":
+                _print_summary(result, course_name)
+                return
+            elif action == "QUIT":
+                print("\n  👋  Discarding — exiting.\n")
+                return
+            else:  # FEEDBACK
+                human_feedback = feedback_text
+                print("\n  🔄  Feedback received. Starting new iteration...\n")
+        # ── End HITL Loop ──────────────────────────────────────────────
 
     # --- 1b. Normal intake flow ------------------------------------------
 
@@ -1175,6 +1275,8 @@ def main(argv: list[str] | None = None) -> None:
     if resume_dir:
         print(f"  Resume:     {resume_dir}")
     print(f"  Labs:       {'Skip' if skip_labs else 'Generate'}")
+    print(f"  Lesson Plans: {'Skip' if skip_lesson_plans else 'Generate'}")
+    print(f"  Presentations: {'Skip' if skip_presentations else 'Generate'}")
     print(f"{'=' * 60}\n")
 
     # --- Resolve prerequisites before intake (--builds-upon) -------------
@@ -1221,11 +1323,13 @@ def main(argv: list[str] | None = None) -> None:
             student_pathway,
             year_level,
             hardware_constraints,
+            material_language,
         ) = _run_intake(
             course_name,
             verbose=True,
             pre_populated=pre_populated,
             prerequisites=prereq_context,
+            material_language_override=material_language_cli,
         )
 
     # --- 2a. Auto-save intake session (Issue #9) -------------------------
@@ -1243,6 +1347,7 @@ def main(argv: list[str] | None = None) -> None:
                 student_pathway=student_pathway,
                 year_level=year_level,
                 hardware_constraints=hardware_constraints,
+                material_language=material_language,
             ),
             timestamp=datetime.now(UTC).isoformat(),
             run_id=run_id,
@@ -1254,30 +1359,64 @@ def main(argv: list[str] | None = None) -> None:
         except OSError as exc:
             print(f"⚠️  Could not save intake session: {exc}\n")
 
-    # --- 3. Run the crew -------------------------------------------------
-    try:
-        result = run_syllabus_crew(
-            course_context,
-            course_name=course_name,
-            primary_language=primary_language,
-            verbose=True,
-            skip_labs=skip_labs,
-            resume_dir=resume_dir,
-            run_id=run_id,
-        )
-    except RuntimeError as exc:
-        print(f"\n❌  Fatal Runtime Error: {exc}", file=sys.stderr)
-        print(
-            "   → Check that OPENROUTER_API_KEY is set in .env.",
-            file=sys.stderr,
-        )
-        sys.exit(2)
-    except Exception as exc:
-        print(f"\n❌  Fatal Unexpected Error: {exc}", file=sys.stderr)
-        sys.exit(3)
+    # --- 3. Run the crew (with HITL feedback loop) ---------------------------
+    human_feedback: str | None = None
+    first_run = True
+    while True:
+        if not first_run:
+            # Feedback iteration: fresh run_id, no resume_dir
+            safe_name = _sanitize_filename(course_name)
+            run_id = generate_run_id(safe_name)
+            run_dir = OUTPUT_ROOT / run_id
+            run_dir.mkdir(parents=True, exist_ok=True)
+            _current_resume_dir = None
+        else:
+            _current_resume_dir = resume_dir
 
-    # --- 4. Print summary ------------------------------------------------
-    _print_summary(result, course_name)
+        try:
+            result = run_syllabus_crew(
+                course_context,
+                course_name=course_name,
+                primary_language=primary_language,
+                material_language=material_language,
+                verbose=True,
+                skip_labs=skip_labs,
+                skip_lesson_plans=skip_lesson_plans,
+                skip_presentations=skip_presentations,
+                human_feedback=human_feedback,
+                resume_dir=_current_resume_dir,
+                run_id=run_id,
+            )
+        except FatalLLMError as exc:
+            _exit_on_fatal_llm_error(exc)
+        except RuntimeError as exc:
+            print(f"\n❌  Fatal Runtime Error: {exc}", file=sys.stderr)
+            print(
+                "   → Check that OPENROUTER_API_KEY is set in .env.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        except Exception as exc:
+            print(f"\n❌  Fatal Unexpected Error: {exc}", file=sys.stderr)
+            sys.exit(3)
+
+        # A futile LLM failure aborts the run deliberately: never prompt for
+        # feedback, because another iteration would fail identically.
+        if result.aborted:
+            _print_summary(result, course_name)
+            _exit_on_aborted_run(result)
+
+        action, feedback_text = prompt_for_feedback()
+        if action == "APPROVE":
+            _print_summary(result, course_name)
+            return
+        elif action == "QUIT":
+            print("\n  👋  Discarding — exiting.\n")
+            return
+        else:  # FEEDBACK
+            human_feedback = feedback_text
+            first_run = False
+            print("\n  🔄  Feedback received. Starting new iteration...\n")
 
 
 if __name__ == "__main__":

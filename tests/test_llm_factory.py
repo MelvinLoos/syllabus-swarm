@@ -30,24 +30,42 @@ from src.llm_factory import (
     CURRICULUM_ARCHITECT,
     EDUCATION_DIRECTOR,
     LAB_DEVELOPER,
+    MODALITY_ROUTER,
     OUTPUT_EXPORTER,
+    QA_REVIEWER,
+    SYLLABUS_GATE,
+    SYSTEM_ONE,
+    THEORY_INSTRUCTOR,
+    ConfigIssue,
+    audit_agent_config,
+    audit_agent_configs,
     build_llm_for_agent,
+    build_system_one_client,
+    format_config_issues,
     get_effective_config,
+    get_effective_system_one_config,
+    has_fatal_config_issues,
+    resolve_system_one_api_key,
+    resolve_system_one_base_url,
+    resolve_system_one_model,
+    resolve_system_one_timeout,
+    system_one_enabled,
 )
+from src.system_one import SystemOneError
 
 # ---------------------------------------------------------------------------
 # Expected hardcoded defaults (tier 4) — mirrored from src/llm_factory.py.
-# NOTE: crewai.LLM strips the provider prefix from model strings (e.g.
-# "deepseek/deepseek-v4-pro" becomes "deepseek-v4-pro").  Tests that inspect the
-# raw resolved value use get_effective_config(); tests that inspect the
-# constructed LLM use the stripped form.
+# NOTE: crewai.LLM strips the "openrouter/" provider prefix from model strings
+# (e.g. "openrouter/deepseek/deepseek-v4-pro" becomes "deepseek/deepseek-v4-pro").
+# Tests that inspect the raw resolved value use get_effective_config(); tests that
+# inspect the constructed LLM use the stripped form.
 # ---------------------------------------------------------------------------
-HARDCODED_MODEL: str = "deepseek/deepseek-v4-pro"
-HARDCODED_MODEL_STRIPPED: str = "deepseek-v4-pro"
+HARDCODED_MODEL: str = "openrouter/deepseek/deepseek-v4-pro"
+HARDCODED_MODEL_STRIPPED: str = "deepseek/deepseek-v4-pro"
 HARDCODED_TEMPERATURE: float = 0.2
 HARDCODED_TOP_P: float = 0.1
-HARDCODED_MAX_TOKENS: int = 8192
-OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+HARDCODED_MAX_TOKENS: int = 32768
+EXPECTED_DEFAULT_BASE_URL: str = "https://openrouter.ai/api/v1"
 
 _DUMMY_API_KEY: str = "sk-test-dummy-key-for-unit-tests"
 _BASE_ENV: dict[str, str] = {"OPENROUTER_API_KEY": _DUMMY_API_KEY}
@@ -58,6 +76,61 @@ ALL_ROLES: tuple[str, ...] = (
     OUTPUT_EXPORTER,
     EDUCATION_DIRECTOR,
 )
+
+# ═══════════════════════════════════════════════════════════════════════
+# Issue #3 RED PHASE — Model-Agnosticism Enforcement
+# These tests MUST fail until hardcoded provider URLs are purged.
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestModelAgnosticBaseUrl:
+    """Verify the LLM factory reads base_url from env, not hardcoded constants."""
+
+    def test_no_hardcoded_openrouter_url_in_source(self) -> None:
+        """src/llm_factory.py uses env var for base URL (fallbacks allowed)."""
+        from pathlib import Path
+
+        factory_path = Path(__file__).resolve().parent.parent / "src" / "llm_factory.py"
+        source = factory_path.read_text()
+
+        # The fallback default inside os.getenv() is acceptable.
+        # But there should be exactly ONE such URL string — the fallback.
+        # Count occurrences of the OpenRouter URL:
+        occurrences = source.count("https://openrouter.ai/api/v1")
+        assert occurrences == 1, (
+            f"Expected exactly 1 fallback URL (in os.getenv), "
+            f"found {occurrences}. All other references must use _BASE_URL."
+        )
+
+        # Verify BASE_URL env var is referenced
+        assert "BASE_URL" in source, (
+            "src/llm_factory.py must reference the BASE_URL environment variable"
+        )
+
+    def test_base_url_env_var_overrides_default(self) -> None:
+        """BASE_URL env var MUST override the default base URL."""
+        custom_url = "https://custom-llm-proxy.example.com/v1"
+        with patch.dict(
+            os.environ,
+            {"OPENROUTER_API_KEY": "sk-test", "BASE_URL": custom_url},
+            clear=True,
+        ):
+            config = get_effective_config(CURRICULUM_ARCHITECT)
+            assert config["base_url"] == custom_url, (
+                f"BASE_URL env var not respected. Expected {custom_url}, got {config['base_url']}"
+            )
+
+    def test_api_key_env_var_fallback_works(self) -> None:
+        """API_KEY env var should also be checked as fallback for auth."""
+        with patch.dict(
+            os.environ,
+            {"API_KEY": "sk-from-generic"},
+            clear=True,
+        ):
+            config = get_effective_config(CURRICULUM_ARCHITECT)
+            assert config["api_key_status"] == "set", (
+                "API_KEY env var should be recognised as an auth credential"
+            )
 
 
 def _env(*extra: dict[str, str]) -> dict[str, str]:
@@ -185,14 +258,14 @@ class TestBuildLLMNoEnvironment:
             assert llm.temperature == HARDCODED_TEMPERATURE
             assert llm.top_p == HARDCODED_TOP_P
             assert llm.max_tokens == HARDCODED_MAX_TOKENS
-            assert llm.base_url == OPENROUTER_BASE_URL
+            assert llm.base_url == EXPECTED_DEFAULT_BASE_URL
 
     def test_all_known_agents_build_for_every_role(self) -> None:
         with patch.dict(os.environ, _env(), clear=True):
             for role in ALL_ROLES:
                 llm = build_llm_for_agent(role)
                 assert llm is not None, f"LLM should not be None for role {role}"
-                assert llm.base_url == OPENROUTER_BASE_URL
+                assert llm.base_url == EXPECTED_DEFAULT_BASE_URL
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +332,7 @@ class TestGetEffectiveConfig:
             assert config["model"] == "openai/per-agent-model"
             assert config["temperature"] == 0.6
             assert config["max_tokens"] == HARDCODED_MAX_TOKENS
-            assert config["base_url"] == OPENROUTER_BASE_URL
+            assert config["base_url"] == EXPECTED_DEFAULT_BASE_URL
 
     def test_effective_config_matches_built_llm(self) -> None:
         env = _env({"AGENT_DEFAULT_MODEL": "openai/default-model"})
@@ -290,3 +363,214 @@ class TestInputValidation:
         with patch.dict(os.environ, _env(), clear=True):
             with pytest.raises(ValueError):
                 build_llm_for_agent(None)  # type: ignore[arg-type]
+
+# ---------------------------------------------------------------------------
+# Pre-flight configuration audit — early warning before credits are spent
+# ---------------------------------------------------------------------------
+
+
+class TestAuditAgentConfig:
+    """The audit must flag the exact misconfigurations that cause NULL content."""
+
+    def test_reasoning_model_with_low_max_tokens_is_fatal(self) -> None:
+        env = _env(
+            {
+                "AGENT_THEORY_INSTRUCTOR_MODEL": "openrouter/anthropic/claude-opus-5.5",
+                "AGENT_THEORY_INSTRUCTOR_MAX_TOKENS": "8192",
+                "AGENT_THEORY_INSTRUCTOR_TOP_P": "0.9",
+            }
+        )
+        with patch.dict(os.environ, env, clear=True):
+            issues = audit_agent_config(THEORY_INSTRUCTOR)
+
+        fatal = [i for i in issues if i.severity == "fatal"]
+        assert len(fatal) == 1
+        assert "claude-opus-5.5" in fatal[0].message
+        assert "AGENT_THEORY_INSTRUCTOR_MAX_TOKENS" in fatal[0].fix
+        assert has_fatal_config_issues(issues)
+
+    def test_reasoning_model_with_safe_max_tokens_is_clean(self) -> None:
+        env = _env(
+            {
+                "AGENT_THEORY_INSTRUCTOR_MODEL": "openrouter/anthropic/claude-opus-5.5",
+                "AGENT_THEORY_INSTRUCTOR_MAX_TOKENS": "32768",
+                "AGENT_THEORY_INSTRUCTOR_TOP_P": "0.9",
+            }
+        )
+        with patch.dict(os.environ, env, clear=True):
+            issues = audit_agent_config(THEORY_INSTRUCTOR)
+
+        assert issues == []
+        assert not has_fatal_config_issues(issues)
+
+    def test_reasoning_model_with_low_top_p_is_warning_only(self) -> None:
+        env = _env(
+            {
+                "AGENT_THEORY_INSTRUCTOR_MODEL": "openrouter/anthropic/claude-opus-5.5",
+                "AGENT_THEORY_INSTRUCTOR_MAX_TOKENS": "32768",
+                "AGENT_THEORY_INSTRUCTOR_TOP_P": "0.1",
+            }
+        )
+        with patch.dict(os.environ, env, clear=True):
+            issues = audit_agent_config(THEORY_INSTRUCTOR)
+
+        assert len(issues) == 1
+        assert issues[0].severity == "warning"
+        assert "top_p" in issues[0].message
+        assert not has_fatal_config_issues(issues)
+
+    def test_non_reasoning_model_is_not_flagged_for_low_tokens(self) -> None:
+        env = _env(
+            {
+                "AGENT_LAB_DEVELOPER_MODEL": "openrouter/z-ai/glm-5.3",
+                "AGENT_LAB_DEVELOPER_MAX_TOKENS": "8192",
+                "AGENT_LAB_DEVELOPER_TOP_P": "0.1",
+            }
+        )
+        with patch.dict(os.environ, env, clear=True):
+            issues = audit_agent_config(LAB_DEVELOPER)
+
+        assert issues == []
+
+    def test_blank_model_is_fatal(self) -> None:
+        env = _env({"AGENT_QA_REVIEWER_MODEL": "   "})
+        with patch.dict(os.environ, env, clear=True):
+            issues = audit_agent_config(QA_REVIEWER)
+
+        assert len(issues) == 1
+        assert issues[0].severity == "fatal"
+        assert "no model is configured" in issues[0].message
+
+    def test_audited_agents_are_resolved_independently(self) -> None:
+        """A healthy non-reasoning default keeps every role clean."""
+        with patch.dict(os.environ, _env(), clear=True):
+            issues = audit_agent_configs([CURRICULUM_ARCHITECT, EDUCATION_DIRECTOR])
+        assert issues == []
+
+
+class TestConfigIssueReporting:
+    def test_audit_agent_configs_aggregates_findings(self) -> None:
+        env = _env(
+            {
+                "AGENT_DEFAULT_MODEL": "openrouter/anthropic/claude-opus-5.5",
+                "AGENT_DEFAULT_MAX_TOKENS": "4096",
+                "AGENT_DEFAULT_TOP_P": "0.9",
+            }
+        )
+        with patch.dict(os.environ, env, clear=True):
+            issues = audit_agent_configs([CURRICULUM_ARCHITECT, LAB_DEVELOPER])
+
+        assert {i.role for i in issues} == {CURRICULUM_ARCHITECT, LAB_DEVELOPER}
+        assert has_fatal_config_issues(issues)
+
+    def test_has_fatal_config_issues_false_for_warnings_only(self) -> None:
+        warnings = [
+            ConfigIssue(role="X", severity="warning", message="m", fix="f"),
+        ]
+        assert not has_fatal_config_issues(warnings)
+
+    def test_format_config_issues_includes_severity_and_fix(self) -> None:
+        out = format_config_issues(
+            [ConfigIssue(role="X", severity="fatal", message="boom", fix="set the var")]
+        )
+        assert "FATAL" in out
+        assert "boom" in out
+        assert "set the var" in out
+
+    def test_format_config_issues_empty_input(self) -> None:
+        assert format_config_issues([]) == ""
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# System One (Jev) — non-generative decision client
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestSystemOneDecisionClient:
+    """The decision client follows the same env discipline as the LLM factory."""
+
+    def test_defaults(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            assert resolve_system_one_model() == "jev-latest"
+            assert resolve_system_one_base_url() == "https://api.typesafe.ai"
+            assert resolve_system_one_timeout() == 10.0
+            assert system_one_enabled() is True
+
+    def test_env_overrides(self) -> None:
+        env = {
+            "SYSTEM_ONE_MODEL": "jev-1.13",
+            "SYSTEM_ONE_BASE_URL": "https://localhost:9999",
+            "SYSTEM_ONE_TIMEOUT": "2.5",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            assert resolve_system_one_model() == "jev-1.13"
+            assert resolve_system_one_base_url() == "https://localhost:9999"
+            assert resolve_system_one_timeout() == 2.5
+
+    def test_per_task_model_override_wins(self) -> None:
+        env = {
+            "SYSTEM_ONE_MODEL": "jev-latest",
+            "SYSTEM_ONE_MODALITY_ROUTER_MODEL": "jev-fast",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            assert resolve_system_one_model(MODALITY_ROUTER) == "jev-fast"
+            assert resolve_system_one_model(SYLLABUS_GATE) == "jev-latest"
+
+    def test_invalid_timeout_falls_back_to_default(self) -> None:
+        with patch.dict(os.environ, {"SYSTEM_ONE_TIMEOUT": "nonsense"}, clear=True):
+            assert resolve_system_one_timeout() == 10.0
+
+    def test_api_key_precedence(self) -> None:
+        with patch.dict(os.environ, {"TYPESAFE_API_KEY": "tk"}, clear=True):
+            assert resolve_system_one_api_key() == "tk"
+        env = {"SYSTEM_ONE_API_KEY": "sk", "TYPESAFE_API_KEY": "tk"}
+        with patch.dict(os.environ, env, clear=True):
+            assert resolve_system_one_api_key() == "sk"
+
+    @pytest.mark.parametrize("value", ["0", "false", "no", "off", "FALSE", "Off"])
+    def test_disabled_values(self, value: str) -> None:
+        with patch.dict(os.environ, {"SYSTEM_ONE_ENABLED": value}, clear=True):
+            assert system_one_enabled() is False
+
+    def test_build_returns_none_without_key(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            assert build_system_one_client() is None
+
+    def test_build_returns_degraded_fake_when_disabled(self) -> None:
+        from src.system_one import FakeSystemOneClient  # noqa: PLC0415
+
+        with patch.dict(os.environ, {"SYSTEM_ONE_ENABLED": "0"}, clear=True):
+            client = build_system_one_client(task=MODALITY_ROUTER)
+        assert isinstance(client, FakeSystemOneClient)
+
+    def test_build_requires_sdk_when_key_present(self) -> None:
+        """With a key but no ``typesafe-sdk``, the error must be actionable."""
+        with patch.dict(os.environ, {"SYSTEM_ONE_API_KEY": _DUMMY_API_KEY}, clear=True):
+            try:
+                client = build_system_one_client()
+            except SystemOneError as exc:
+                assert "typesafe-sdk" in str(exc)
+            else:  # pragma: no cover - only runs when the SDK is installed
+                close = getattr(client, "close", None)
+                if callable(close):
+                    close()
+
+    def test_effective_config_reports_task(self) -> None:
+        with patch.dict(os.environ, {"SYSTEM_ONE_API_KEY": "k"}, clear=True):
+            cfg = get_effective_system_one_config(MODALITY_ROUTER)
+        assert cfg["task"] == MODALITY_ROUTER
+        assert cfg["model"] == "jev-latest"
+        assert cfg["enabled"] is True
+        assert cfg["api_key_status"] == "set"
+
+    def test_effective_config_marks_missing_key(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            cfg = get_effective_system_one_config(SYSTEM_ONE)
+        assert cfg["task"] == SYSTEM_ONE
+        assert cfg["api_key_status"] != "set"
+
+    def test_base_url_is_model_agnostic(self) -> None:
+        """The decision layer must not inherit the generative provider's URL."""
+        with patch.dict(os.environ, {}, clear=True):
+            assert "openrouter" not in resolve_system_one_base_url()
+

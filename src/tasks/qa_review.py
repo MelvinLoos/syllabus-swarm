@@ -25,7 +25,11 @@ theory files) with specific, actionable feedback.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from crewai import Agent, Task
+
+from src.models import QAScore
 
 
 def create_qa_review_task(
@@ -35,6 +39,8 @@ def create_qa_review_task(
     run_id: str | None = None,
     lab_developer_role: str | None = None,
     theory_instructor_role: str | None = None,
+    material_language: str = "Dutch",
+    qa_scores: Sequence[QAScore] | None = None,
     verbose: bool = False,
 ) -> Task:
     """Create a CrewAI Task that performs QA review of generated lab and theory files.
@@ -75,6 +81,8 @@ def create_qa_review_task(
 
     # ── Build the description ──────────────────────────────────────────
     description = (
+        f"**🌐 LANGUAGE: ALL output (QA report, findings, delegation instructions) "
+        f"MUST be written in {material_language}.**\n\n"
         f"## QA Review — Generated Labs & Theory for: {course_name}\n\n"
         f"**Labs Directory:** `{labs_dir}`\n\n"
         f"---\n\n"
@@ -183,6 +191,31 @@ def create_qa_review_task(
         f"should immediately see the intended interactive experience, not "
         f"a blank page or error message.\n\n"
         f"---\n\n"
+        f"### 🎨  Check 4: GLR Design System Audit\n\n"
+        f"Verify that ALL generated materials follow the GLR Media Creative "
+        f"brand guidelines for Grafisch Lyceum Rotterdam:\n\n"
+        f"**For presentations (Marp Markdown):**\n"
+        f"- [ ] NOT using generic `theme: uncover` — must use GLR custom theme\n"
+        f"- [ ] Colours: `#76B800`/`#A6E22E` (green), `#000000` (black), "
+        f"`#002BFF` (blue accent)\n"
+        f"- [ ] 0px border-radius on all elements (no rounded corners)\n"
+        f"- [ ] Space Grotesk for headings, Hanken Grotesk for body\n"
+        f"- [ ] GLR component classes used where applicable "
+        f"(`.glr-card`, `.glr-badge`, `.glr-btn-primary`, etc.)\n\n"
+        f"**For HTML theory artifacts:**\n"
+        f"- [ ] Uses GLR colour palette (green `#76B800`, black `#000000`, "
+        f"white `#FFFFFF`)\n"
+        f"- [ ] 0px border-radius on all elements\n"
+        f"- [ ] Hard offset shadows only (no blur/glow)\n"
+        f"- [ ] Space Grotesk headings, Hanken Grotesk body\n"
+        f"- [ ] Google Fonts import includes both families\n\n"
+        f"**For all documents:**\n"
+        f"- [ ] Clean, professional formatting aligned with High-Contrast "
+        f"Brutalist Modernism\n"
+        f"- [ ] Humanics tags `[T]` `[D]` `[H]` present and correctly styled\n"
+        f"- [ ] Brand footer/credit where appropriate: "
+        f"\"Generated for Grafisch Lyceum Rotterdam (GLR)\"\n\n"
+        f"---\n\n"
         f"### 🔴  CRITICAL: Delegation Mandate\n\n"
         f"If ANY file fails ANY check, you **MUST** use CrewAI's "
         f"delegation mechanism (`delegate_work_to_coworker`) to assign a "
@@ -209,7 +242,8 @@ def create_qa_review_task(
         f"When you delegate a fix, you **MUST** instruct the coworker to use "
         f"the **exact** `run_id` shown in the Labs Directory path above "
         f'(e.g., `run_id="{run_id or "RUN_ID"}"`).  The coworker MUST use this '
-        f"`run_id` in ALL `write-labs` and `write-directory-tree` tool calls.\n\n"
+        f"`run_id` in ALL `write-labs`, `write-theory`, `write-lesson-plan`, "
+        f"and `write-presentation` tool calls.\n\n"
         f"❌ **WRONG:** using a made-up run_id like "
         f'`run_id="2023-06-15_120000_Some_Random_Name"`\n'
         f'✅ **CORRECT:** `run_id="{run_id or "RUN_ID"}"` '
@@ -253,8 +287,26 @@ def create_qa_review_task(
         f"for MBO4 students.  Ready for classroom use.**'\n"
     )
 
+    # ── Inject the deterministic System One verdict (when available) ───
+    # The typed scores are authoritative: the agent must NOT re-judge, only
+    # format the report and delegate fixes for artifacts flagged below.
+    if qa_scores:
+        from src.evaluators.qa_scorer import render_qa_report  # noqa: PLC0415
+
+        description = (
+            "## 🧠 Deterministic QA verdict (System One — AUTHORITATIVE)\n\n"
+            "The following typed rubric scores were produced by the non-generative "
+            "System One model.  Treat them as FINAL.  Do NOT re-assess correctness "
+            "or didactics yourself — your job is to (1) format this into the report "
+            "structure below and (2) delegate a fix to the responsible agent for "
+            "every artifact whose verdict is `needs_fixes`.\n\n"
+            "```markdown\n"
+            + render_qa_report(qa_scores, course_name=course_name)
+            + "```\n\n---\n\n"
+            + description
+        )
+
     expected_output = (
-        "A comprehensive Markdown QA Report with Technical Correctness "
         "Check results for lab code, Didactic & Clarity Check results for "
         "lab code, Theory Artifact Review results for theory/ files, a "
         "Delegation Summary (if any fixes were delegated to the Lab "

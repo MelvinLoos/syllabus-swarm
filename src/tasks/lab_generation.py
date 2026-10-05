@@ -371,6 +371,8 @@ def create_lab_generation_task(
     language: str = "Python",
     run_id: str | None = None,
     tier: str | None = None,
+    human_feedback: str | None = None,
+    material_language: str = "Dutch",
     verbose: bool = False,
 ) -> Task:
     """Create a CrewAI Task that generates tiered coding labs from a syllabus.
@@ -483,6 +485,9 @@ def create_lab_generation_task(
 
     # ---- Build the description ------------------------------------------
     description_parts: list[str] = [
+        f"**🌐 LANGUAGE: ALL output (lab code comments, README files, instructions "
+        f"for students, variable names, function names, documentation strings) MUST "
+        f"be written in {material_language}.**\n\n"
         f"Generate tiered coding labs for the following course:\n\n"
         f"**Course Name:** {course_name}\n"
         f"**Primary Language:** {language}\n",
@@ -514,6 +519,17 @@ def create_lab_generation_task(
     )
 
     description = "".join(description_parts)
+
+    # ── Inject human feedback (HITL loop) ───────────────────────────
+    if human_feedback:
+        description += (
+            f"\n\n## ⚠️ Human Feedback (Instructor Review)\n\n"
+            f"The following feedback was provided by a human reviewer "
+            f"and MUST be addressed in this iteration:\n\n"
+            f"{human_feedback}\n\n"
+            f"Please revise the output to incorporate this feedback "
+            f"while maintaining all other requirements.\n"
+        )
 
     # ---- Build the expected_output --------------------------------------
     if tier:

@@ -27,12 +27,17 @@ from __future__ import annotations
 
 from crewai import Agent, Task
 
+from src.models import SyllabusGateDecision
+
 
 def create_syllabus_review_task(
     *,
     agent: Agent,
     course_name: str,
     syllabus_context: str,
+    material_language: str = "Dutch",
+    human_feedback: str | None = None,
+    gate_decision: SyllabusGateDecision | None = None,
     verbose: bool = False,
 ) -> Task:
     """Create a CrewAI Task that performs a feasibility audit of a syllabus.
@@ -55,6 +60,8 @@ def create_syllabus_review_task(
     """
     # ── Build the description ──────────────────────────────────────────
     description = (
+        f"**🌐 LANGUAGE: ALL output (audit report, findings, recommendations) MUST "
+        f"be written in {material_language}.**\n\n"
         f"## Feasibility Audit — Syllabus for: {course_name}\n\n"
         f"---\n\n"
         f"### Your Task\n\n"
@@ -192,8 +199,38 @@ def create_syllabus_review_task(
         f"MBO4 students.  Approved to proceed to Theory and Lab generation.**'\n"
     )
 
+    # ── Inject human feedback (HITL loop) ───────────────────────────
+    if human_feedback:
+        description += (
+            f"\n\n## ⚠️ Human Feedback (Instructor Review)\n\n"
+            f"The following feedback was provided by a human reviewer "
+            f"and MUST be addressed in this iteration:\n\n"
+            f"{human_feedback}\n\n"
+            f"Please revise the audit to incorporate this feedback "
+            f"while maintaining all other requirements.\n"
+        )
+
+    # ── Inject the deterministic System One gate (when available) ──────
+    # The typed gate decision is authoritative: the agent must NOT decide
+    # pass/fail, only produce feedback grounded in the blockers and delegate a
+    # targeted rewrite to the Curriculum Architect.
+    if gate_decision is not None:
+        from src.evaluators.syllabus_gate import render_gate_report  # noqa: PLC0415
+
+        description = (
+            "## 🧠 Deterministic feasibility gate (System One — AUTHORITATIVE)\n\n"
+            "The following verdict was produced by the non-generative System One "
+            "model.  Treat it as FINAL.  Do NOT re-audit feasibility yourself — "
+            "your job is to (1) explain each blocker and (2) delegate a targeted "
+            "rewrite to the Curriculum Architect when the verdict is NEEDS "
+            "REVISION.\n\n"
+            "```markdown\n"
+            + render_gate_report(gate_decision, course_name=course_name)
+            + "```\n\n---\n\n"
+            + description
+        )
+
     expected_output = (
-        "A comprehensive Markdown Feasibility Audit Report with "
         "Time-Budget Mathematics check results, Workload Realism "
         "analysis, Scheduling Sanity review, MBO4 Appropriateness "
         "assessment, a Delegation Summary (if any fixes were delegated "

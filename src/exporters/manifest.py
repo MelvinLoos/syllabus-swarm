@@ -109,7 +109,7 @@ def _scan_directory(base: Path) -> list[ArtifactSummary]:
         return result
 
     for entry in sorted(base.iterdir()):
-        if entry.name.startswith("."):
+        if entry.name.startswith((".", "_")):
             continue
         if entry.is_dir():
             count = 0
@@ -166,7 +166,7 @@ def _build_tree(
 
     if path.is_dir():
         entries = sorted(
-            [e for e in path.iterdir() if not e.name.startswith(".")],
+            [e for e in path.iterdir() if not e.name.startswith((".", "_"))],
             key=lambda e: (not e.is_dir(), e.name),
         )
         for i, entry in enumerate(entries):
@@ -187,7 +187,7 @@ def _build_tree_children(path: Path, prefix: str = "") -> list[str]:
         return lines
 
     entries = sorted(
-        [e for e in path.iterdir() if not e.name.startswith(".")],
+        [e for e in path.iterdir() if not e.name.startswith((".", "_"))],
         key=lambda e: (not e.is_dir(), e.name),
     )
     for i, entry in enumerate(entries):
@@ -205,7 +205,7 @@ def _render_subtree(node: Path, prefix: str, is_last: bool) -> list[str]:
     if node.is_dir():
         lines.append(f"{prefix}{connector}{node.name}/")
         children = sorted(
-            [e for e in node.iterdir() if not e.name.startswith(".")],
+            [e for e in node.iterdir() if not e.name.startswith((".", "_"))],
             key=lambda e: (not e.is_dir(), e.name),
         )
         for j, child in enumerate(children):
@@ -263,10 +263,12 @@ def update_output_manifest(
     syllabus_entries: list[ArtifactSummary] = []
     labs_entries: list[ArtifactSummary] = []
     rubrics_entries: list[ArtifactSummary] = []
+    lesson_plan_entries: list[ArtifactSummary] = []
+    presentation_entries: list[ArtifactSummary] = []
 
     if output_dir.exists():
         for run_dir in sorted(output_dir.iterdir()):
-            if not run_dir.is_dir() or run_dir.name.startswith("."):
+            if not run_dir.is_dir() or run_dir.name.startswith((".", "_")):
                 continue
             if run_dir.name == "README.md":
                 continue
@@ -279,8 +281,17 @@ def update_output_manifest(
             rub_dir = run_dir / "rubrics"
             if rub_dir.exists():
                 rubrics_entries.extend(_scan_directory(rub_dir))
+            lp_dir = run_dir / "lesson_plans"
+            if lp_dir.exists():
+                lesson_plan_entries.extend(_scan_directory(lp_dir))
+            pres_dir = run_dir / "presentations"
+            if pres_dir.exists():
+                presentation_entries.extend(_scan_directory(pres_dir))
 
-    all_entries = syllabus_entries + labs_entries + rubrics_entries
+    all_entries = (
+        syllabus_entries + labs_entries + rubrics_entries
+        + lesson_plan_entries + presentation_entries
+    )
     total_files = sum(e.file_count for e in all_entries)
     total_bytes = sum(e.size_bytes for e in all_entries)
 
@@ -302,6 +313,8 @@ def update_output_manifest(
     syl_bytes = sum(e.size_bytes for e in syllabus_entries)
     lab_bytes = sum(e.size_bytes for e in labs_entries)
     rub_bytes = sum(e.size_bytes for e in rubrics_entries)
+    lp_bytes = sum(e.size_bytes for e in lesson_plan_entries)
+    pres_bytes = sum(e.size_bytes for e in presentation_entries)
 
     lines.append(
         f"| Syllabi        | {len(syllabus_entries):>5} | {_format_size(syl_bytes):>10} |\n"
@@ -309,6 +322,12 @@ def update_output_manifest(
     lines.append(f"| Lab courses    | {len(labs_entries):>5} | {_format_size(lab_bytes):>10} |\n")
     lines.append(
         f"| Rubrics        | {len(rubrics_entries):>5} | {_format_size(rub_bytes):>10} |\n"
+    )
+    lines.append(
+        f"| Lesson Plans   | {len(lesson_plan_entries):>5} | {_format_size(lp_bytes):>10} |\n"
+    )
+    lines.append(
+        f"| Presentations  | {len(presentation_entries):>5} | {_format_size(pres_bytes):>10} |\n"
     )
     lines.append(
         f"| **Total**      | **{total_files:>3}** | **{_format_size(total_bytes):>8}** |\n"
@@ -340,6 +359,18 @@ def update_output_manifest(
     if rubrics_entries:
         lines.append("## 📋  Rubrics\n\n")
         for entry in rubrics_entries:
+            lines.append(f"- [`{entry.path}`]({entry.path}) ({_format_size(entry.size_bytes)})\n")
+        lines.append("\n")
+
+    if lesson_plan_entries:
+        lines.append("## 📝  Lesson Plans\n\n")
+        for entry in lesson_plan_entries:
+            lines.append(f"- [`{entry.path}`]({entry.path}) ({_format_size(entry.size_bytes)})\n")
+        lines.append("\n")
+
+    if presentation_entries:
+        lines.append("## 🎬  Presentations\n\n")
+        for entry in presentation_entries:
             lines.append(f"- [`{entry.path}`]({entry.path}) ({_format_size(entry.size_bytes)})\n")
         lines.append("\n")
 

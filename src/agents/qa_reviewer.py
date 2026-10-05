@@ -18,6 +18,15 @@ The agent obtains its LLM through
 role, so model selection, temperature, and other generation parameters are
 configured in one place (:mod:`src.llm_factory`) following the project-wide
 per-agent fallback chain.
+
+.. rubric:: Deterministic decision layer (System One)
+
+The pass/fail verdict is **no longer** an LLM judgment.  Content is scored
+against a typed rubric by the non-generative System One model
+(:mod:`src.evaluators.qa_scorer`), and that score is authoritative.  When
+those scores are supplied to the task, this agent's remaining responsibilities
+are purely non-decisional: formatting the QA report and delegating fixes for
+artifacts flagged ``needs_fixes``.
 """
 
 from __future__ import annotations
@@ -51,6 +60,7 @@ def create_qa_reviewer(
     verbose: bool = False,
     max_iter: int | None = None,
     max_rpm: int | None = None,
+    max_retry_limit: int | None = None,
 ) -> Agent:
     """Create the QA Reviewer CrewAI agent.
 
@@ -61,6 +71,12 @@ def create_qa_reviewer(
         ``build_llm_for_agent(QA_REVIEWER)`` when None.
     verbose : bool
         Enable detailed agent logging.
+    max_retry_limit : int or None
+        Number of times CrewAI may re-run the task after an error.
+        Defaults to 5 (matching the other tool-using agents), because the
+        QA Reviewer makes the most tool calls of any agent (it reads every
+        generated file) and is therefore the most exposed to transient LLM
+        failures (e.g. an empty/``None`` model response).
 
     Returns
     -------
@@ -136,6 +152,7 @@ def create_qa_reviewer(
         allow_delegation=True,
         max_iter=max_iter if max_iter is not None else resolve_max_iter(QA_REVIEWER, 30),
         max_rpm=max_rpm if max_rpm is not None else resolve_max_rpm(QA_REVIEWER, 20),
+        max_retry_limit=max_retry_limit if max_retry_limit is not None else 5,
         tools=[dir_tool, file_tool, export_tool],
     )
 

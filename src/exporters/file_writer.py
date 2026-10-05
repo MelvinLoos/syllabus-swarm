@@ -48,6 +48,88 @@ class FileWriteError(Exception):
 
 
 # ---------------------------------------------------------------------------
+# Canonical tier taxonomy — the ONE valid spelling for each lab tier directory
+# ---------------------------------------------------------------------------
+# Past runs drifted into inconsistent spellings (``tier_1_—_foundations``,
+# ``tier_2___application``, ``Tier 1 — Foundations`` …) which scattered the
+# same logical tier across several directories.  Everything that needs a tier
+# directory name must funnel through :func:`canonical_tier` so the layout stays
+# deterministic.
+
+CANONICAL_TIERS: tuple[str, ...] = (
+    "tier1_foundations",
+    "tier2_application",
+    "tier3_architecture",
+)
+
+# Maps a canonical tier to its human-facing label (used in prompts/summaries).
+_TIER_LABELS: dict[str, str] = {
+    "tier1_foundations": "Tier 1 — Foundations",
+    "tier2_application": "Tier 2 — Application",
+    "tier3_architecture": "Tier 3 — Architecture",
+}
+
+
+def canonical_tier(value: str | None) -> str | None:
+    """Normalise *value* to a canonical tier directory name.
+
+    Accepts any of the spellings that have appeared in generated material —
+    the canonical form (``tier1_foundations``), the human label
+    (``Tier 1 — Foundations``), or separator variants
+    (``tier_1_foundations``, ``tier 1 foundations``, ``tier2`` …).
+
+    Parameters
+    ----------
+    value : str or None
+        The raw tier identifier supplied by a caller or an LLM.
+
+    Returns
+    -------
+    str or None
+        The canonical directory name (one of :data:`CANONICAL_TIERS`), or
+        ``None`` when *value* does not identify a known tier.
+    """
+    if not value:
+        return None
+
+    raw = str(value).strip().lower()
+
+    # 1. Direct hit on the canonical form (or a trailing slash variant).
+    trimmed = raw.rstrip("/\\").strip()
+    if trimmed in CANONICAL_TIERS:
+        return trimmed
+
+    # 2. Normalise every separator (space, slash, hyphen, en/em dash) to a
+    #    single space, then match against the human-label forms.
+    collapsed = trimmed.replace("\u2014", " ").replace("\u2013", " ")
+    collapsed = re.sub(r"[\s/_-]+", " ", collapsed).strip()
+
+    for tier in CANONICAL_TIERS:
+        num = tier[4]  # "1" | "2" | "3"
+        kind = tier.split("_", 1)[1]  # "foundations" | "application" | ...
+        if collapsed in (
+            f"tier {num} {kind}",
+            f"tier {num}",
+            f"tier{num}",
+        ):
+            return tier
+
+    return None
+
+
+def tier_label(value: str | None) -> str:
+    """Return the human-facing label for a canonical tier.
+
+    Falls back to *value* unchanged when it is not a recognised tier so the
+    helper is always safe to call.
+    """
+    canonical = canonical_tier(value)
+    if canonical is None:
+        return str(value or "")
+    return _TIER_LABELS[canonical]
+
+
+# ---------------------------------------------------------------------------
 # Sanitiser — convert arbitrary strings into safe filesystem names
 # ---------------------------------------------------------------------------
 
@@ -452,6 +534,207 @@ def write_rubric(
     safe = _sanitize_filename(course_name)
     path = OUTPUT_PATHS.rubrics_dir / f"{safe}-rubric.md"
     return write_file(path, content, force=force)
+
+
+def write_lesson_plan(
+    course_name: str,
+    module_name: str,
+    content: Any,
+    *,
+    force: bool = False,
+    run_id: str | None = None,
+) -> Path:
+    """Write a lesson plan Markdown file.
+
+    Parameters
+    ----------
+    course_name : str
+        Human-readable course title.
+    module_name : str
+        Module name for the lesson plan subdirectory.
+    content : Any
+        The complete lesson plan (Markdown text).  Coerced via ``str()``.
+    force : bool
+        When ``False``, raises ``FileWriteError`` if the file already exists.
+    run_id : str or None
+        When provided, scopes output under ``output/<run_id>/``.
+
+    Returns
+    -------
+    Path
+        Absolute path to the written lesson plan.
+    """
+    safe_module = _sanitize_filename(module_name)
+    if run_id:
+        path = _PROJECT_ROOT / "output" / run_id / "lesson_plans" / safe_module / "lesson_plan.md"
+    else:
+        path = OUTPUT_PATHS.root / "lesson_plans" / safe_module / "lesson_plan.md"
+    return write_file(path, content, force=force)
+
+
+def write_presentation(
+    course_name: str,
+    module_name: str,
+    content: Any,
+    *,
+    force: bool = False,
+    run_id: str | None = None,
+) -> Path:
+    """Write a presentation (Marp Markdown) file.
+
+    Parameters
+    ----------
+    course_name : str
+        Human-readable course title.
+    module_name : str
+        Module name for the presentation subdirectory.
+    content : Any
+        The complete presentation (Marp Markdown).  Coerced via ``str()``.
+    force : bool
+        When ``False``, raises ``FileWriteError`` if the file already exists.
+    run_id : str or None
+        When provided, scopes output under ``output/<run_id>/``.
+
+    Returns
+    -------
+    Path
+        Absolute path to the written presentation.
+    """
+    safe_module = _sanitize_filename(module_name)
+    if run_id:
+        path = (
+            _PROJECT_ROOT / "output" / run_id / "presentations" / safe_module / "presentation.md"
+        )
+    else:
+        path = OUTPUT_PATHS.root / "presentations" / safe_module / "presentation.md"
+    return write_file(path, content, force=force)
+
+
+# ---------------------------------------------------------------------------
+# RemotionManifest → .tsx export (Issue #11 — Polyglot VaC output)
+# ---------------------------------------------------------------------------
+
+
+def write_remotion_manifest(
+    manifest: object,
+    *,
+    force: bool = False,
+) -> Path:
+    """Write a ``RemotionManifest`` as a valid ``.tsx`` file to ``src/export/vac/``.
+
+    The generated ``.tsx`` file is a self-contained React/Remotion composition
+    that imports the Remotion framework and exports a named composition component.
+    Output is placed in ``src/export/vac/`` — completely isolated from the
+    Markdown curriculum artifacts in ``output/``.
+
+    Parameters
+    ----------
+    manifest : RemotionManifest
+        The VaC composition descriptor produced by the Video Engineer agent.
+    force : bool
+        When ``False``, raises ``FileWriteError`` if the ``.tsx`` file already
+        exists.
+
+    Returns
+    -------
+    Path
+        Absolute path to the written ``.tsx`` file.
+
+    Raises
+    ------
+    TypeError
+        If *manifest* is not a ``RemotionManifest`` instance.
+    FileWriteError
+        If the target file already exists and *force* is ``False``.
+    """
+    # Lazy import to keep the module-level dependency footprint small.
+    from src.models import RemotionManifest  # noqa: PLC0415
+
+    if not isinstance(manifest, RemotionManifest):
+        raise TypeError(f"Expected a RemotionManifest instance, got {type(manifest).__name__}")
+
+    safe_name = _sanitize_filename(manifest.composition_id)
+    vac_dir = _PROJECT_ROOT / "src" / "export" / "vac"
+    vac_dir.mkdir(parents=True, exist_ok=True)
+    output_path = vac_dir / f"{safe_name}.tsx"
+
+    # Generate a minimal but valid React/Remotion .tsx composition.
+    component_lines: list[str] = []
+    component_lines.append(
+        'import {useCurrentFrame, useVideoConfig, AbsoluteFill} from "remotion";'
+    )
+    component_lines.append("")
+    component_lines.append(f"export const {manifest.composition_id} = () => {{")
+    component_lines.append("  const frame = useCurrentFrame();")
+    component_lines.append("  const {{fps, durationInFrames}} = useVideoConfig();")
+    component_lines.append("")
+    component_lines.append("  return (")
+    component_lines.append('    <AbsoluteFill style={{backgroundColor: "white"}}>')
+    component_lines.append("      <h1>{manifest.composition_id}</h1>")
+    component_lines.append("      <p>Frame {frame} / {durationInFrames}</p>")
+    component_lines.extend(_render_components(manifest.components, indent=6))
+    component_lines.append("    </AbsoluteFill>")
+    component_lines.append("  );")
+    component_lines.append("};")
+    component_lines.append("")
+
+    content = "\n".join(component_lines)
+
+    return write_file(output_path, content, force=force)
+
+
+def _render_components(
+    components: list[dict[str, object]],
+    *,
+    indent: int = 0,
+) -> list[str]:
+    """Recursively render RemotionManifest components to JSX lines.
+
+    Parameters
+    ----------
+    components : list[dict[str, object]]
+        Ordered list of component descriptors from the manifest.
+    indent : int
+        Current indentation level in spaces.
+
+    Returns
+    -------
+    list[str]
+        JSX-formatted lines representing the component tree.
+    """
+    lines: list[str] = []
+    prefix = " " * indent
+
+    for comp in components:
+        comp_type = str(comp.get("type", "div"))
+        comp_name = str(comp.get("name", ""))
+        comp_props: dict[str, object] = dict(comp.get("props", {}) or {})
+        children: list[dict[str, object]] = list(comp.get("children", []) or [])
+
+        props_str = ""
+        if comp_props:
+            prop_parts = []
+            for k, v in comp_props.items():
+                if isinstance(v, str):
+                    prop_parts.append(f'{k}="{v}"')
+                elif isinstance(v, bool):
+                    prop_parts.append(f"{k}={str(v).lower()}")
+                else:
+                    prop_parts.append(f"{k}={{{v}}}")
+            props_str = " " + " ".join(prop_parts)
+
+        if children:
+            lines.append(f"{prefix}<{comp_type}{props_str}>")
+            lines.extend(_render_components(children, indent=indent + 2))
+            lines.append(f"{prefix}</{comp_type}>")
+        elif comp_name:
+            lines.append(f"{prefix}<{comp_type}{props_str}>")
+            lines.append(f"{prefix}  {{/* {comp_name} */}}")
+            lines.append(f"{prefix}</{comp_type}>")
+        else:
+            lines.append(f"{prefix}<{comp_type}{props_str} />")
+
+    return lines
 
 
 # ---------------------------------------------------------------------------
